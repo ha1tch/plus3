@@ -1,30 +1,20 @@
 package main
 
 import (
-    "fmt"
-    "github.com/ha1tch/plus3/pkg/disk"
-    "log"
+	"fmt"
+	"github.com/ha1tch/plus3/pkg/disk"
+	"log"
 )
 
 func main() {
-    // Example: Creating a new +3DOS disk image
-    d, err := disk.NewDisk()
-    if err != nil {
-        log.Fatalf("Failed to create new disk: %v", err)
-    }
+	// Create a new +3DOS disk image with default settings
+	newDisk, err := disk.NewDisk()
+	if err != nil {
+		log.Fatalf("Failed to create new disk: %v", err)
+	}
 
-    fmt.Println("Created new +3DOS disk image")
-
-    // Example: Writing data to a file in the disk image
-    file, err := d.CreateFile("example.txt")
-    if err != nil {
-        log.Fatalf("Failed to create file: %v", err)
-    }
-
-    data := []byte("Hello, +3DOS World!")
-    file.Write(data)
-    file.Close()
-
-    fmt.Println("Wrote file to disk")
+	// Print out the disk details to verify the creation process
+	fmt.Println("New +3DOS Disk Image Created")
+	newDisk.PrintDetails()
 }
 
