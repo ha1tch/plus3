@@ -8,12 +8,13 @@ const (
 	AttrReadOnly = 0x01 // t1: 0=read-write, 1=read-only
 	AttrSystem   = 0x02 // t2: 0=not system, 1=system file
 	AttrArchived = 0x20 // t3: 0=not archived, 1=archived
+	AttrHidden   = 0x08 //
 
 	// Name field (f1-f8) attributes - f5-f8 reserved, always 0
-	AttrUserF1   = 0x40 // f1: User-defined
-	AttrUserF2   = 0x80 // f2: User-defined
-	AttrUserF3   = 0x40 // f3: User-defined
-	AttrUserF4   = 0x80 // f4: User-defined
+	AttrUserF1 = 0x40 // f1: User-defined
+	AttrUserF2 = 0x80 // f2: User-defined
+	AttrUserF3 = 0x40 // f3: User-defined
+	AttrUserF4 = 0x80 // f4: User-defined
 )
 
 // FileAttributes represents +3DOS file attributes
@@ -24,10 +25,10 @@ type FileAttributes struct {
 	Archived bool // t3
 
 	// User-defined attributes
-	UserF1   bool // f1
-	UserF2   bool // f2
-	UserF3   bool // f3
-	UserF4   bool // f4
+	UserF1 bool // f1
+	UserF2 bool // f2
+	UserF3 bool // f3
+	UserF4 bool // f4
 }
 
 // GetTypeAttributes returns the type field attributes as a byte

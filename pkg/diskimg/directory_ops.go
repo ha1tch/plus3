@@ -3,24 +3,33 @@
 package diskimg
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
-// readDirectorySectors reads the directory sectors from the disk image
-func (di *DiskImage) readDirectorySectors() ([]byte, error) {
-	// Calculate how many sectors we need for the directory
-	directorySectors := (MaxDirectoryEntries * DirectoryEntrySize + BytesPerSector - 1) / BytesPerSector
+// Constants for +3DOS directory handling
+const (
+	DirectoryTrack         = 0   // Fixed track for directory
+	DirectoryStartSector   = 0   // Starting sector of the directory
+	DirectorySizeInSectors = 4   // Directory occupies 4 sectors
+	DirectoryEntrySize     = 32  // Size of a single directory entry in bytes
+	MaxDirectoryEntries    = 128 // Maximum entries in the directory
+)
 
+// readDirectory reads all directory sectors from the disk
+func (di *DiskImage) readDirectory() ([]byte, error) {
 	// Allocate buffer for directory data
-	dirData := make([]byte, directorySectors*BytesPerSector)
+	dirData := make([]byte, DirectorySizeInSectors*BytesPerSector)
 
 	// Read each sector
-	for sector := 0; sector < directorySectors; sector++ {
-		sectorData, err := di.GetSectorData(DirectoryTrack, sector+DirectorySector, 0)
+	for sector := 0; sector < DirectorySizeInSectors; sector++ {
+		sectorData, err := di.GetSectorData(DirectoryTrack, sector+DirectoryStartSector, 0)
 		if err != nil {
-			return nil, errors.New("failed to read directory sector")
+			return nil, fmt.Errorf("failed to read directory sector %d: %w", sector, err)
 		}
-		
+
 		// Copy sector data into buffer
 		offset := sector * BytesPerSector
 		copy(dirData[offset:], sectorData)
@@ -29,89 +38,73 @@ func (di *DiskImage) readDirectorySectors() ([]byte, error) {
 	return dirData, nil
 }
 
-// writeDirectorySectors writes the directory sectors to the disk image
-func (di *DiskImage) writeDirectorySectors(dirData []byte) error {
-	// Calculate number of sectors needed
-	directorySectors := (len(dirData) + BytesPerSector - 1) / BytesPerSector
-
-	// Validate directory size
-	maxDirectorySectors := (MaxDirectoryEntries * DirectoryEntrySize + BytesPerSector - 1) / BytesPerSector
-	if directorySectors > maxDirectorySectors {
+// writeDirectory writes directory data back to disk
+func (di *DiskImage) writeDirectory(dirData []byte) error {
+	if len(dirData) > DirectorySizeInSectors*BytesPerSector {
 		return errors.New("directory data exceeds maximum size")
 	}
 
 	// Write each sector
-	for sector := 0; sector < directorySectors; sector++ {
-		// Get data for this sector
+	for sector := 0; sector < DirectorySizeInSectors; sector++ {
 		offset := sector * BytesPerSector
-		sectorData := make([]byte, BytesPerSector)
-		
-		// Copy data, ensuring we don't read past the end of dirData
-		remaining := len(dirData) - offset
-		if remaining > BytesPerSector {
-			remaining = BytesPerSector
-		}
-		copy(sectorData, dirData[offset:offset+remaining])
+		sectorData := dirData[offset : offset+BytesPerSector]
 
-		// Write sector
-		err := di.SetSectorData(DirectoryTrack, sector+DirectorySector, 0, sectorData)
+		err := di.SetSectorData(DirectoryTrack, sector+DirectoryStartSector, 0, sectorData)
 		if err != nil {
-			return errors.New("failed to write directory sector")
+			return fmt.Errorf("failed to write directory sector %d: %w", sector, err)
 		}
 	}
 
 	return nil
 }
 
-// InitializeDirectory initializes an empty directory on the disk
+// InitializeDirectory creates an empty directory on the disk
 func (di *DiskImage) InitializeDirectory() error {
-	// Calculate number of sectors needed for directory
-	directorySectors := (MaxDirectoryEntries * DirectoryEntrySize + BytesPerSector - 1) / BytesPerSector
-
-	// Create empty sector data
-	emptyData := make([]byte, BytesPerSector)
-	for i := range emptyData {
-		emptyData[i] = 0xE5 // Fill with deleted entry markers
+	// Create empty directory data
+	dirData := make([]byte, DirectorySizeInSectors*BytesPerSector)
+	for i := range dirData {
+		dirData[i] = 0xE5 // Mark all entries as deleted
 	}
 
-	// Write empty sectors
-	for sector := 0; sector < directorySectors; sector++ {
-		err := di.SetSectorData(DirectoryTrack, sector+DirectorySector, 0, emptyData)
-		if err != nil {
-			return fmt.Errorf("failed to initialize directory sector %d: %v", sector, err)
-		}
+	// Write the empty directory
+	err := di.writeDirectory(dirData)
+	if err != nil {
+		return fmt.Errorf("failed to initialize directory: %w", err)
 	}
 
-	// Create new directory structure
-	dir := &Directory{
-		disk: di,
-	}
-
-	// Initialize all entries as unused
-	for i := range dir.Entries {
-		dir.Entries[i].Status = 0xE5 // Marked as deleted/unused
-	}
-
-	di.directory = dir
 	return nil
 }
 
-// GetDirectory returns the disk's directory, reading it if necessary
-func (di *DiskImage) GetDirectory() (*Directory, error) {
-	if di.directory == nil {
-		dir, err := di.readDirectory()
-		if err != nil {
-			return nil, err
-		}
-		di.directory = dir
+// GetDirectory returns the directory data as a slice of entries
+func (di *DiskImage) GetDirectory() ([]DirectoryEntry, error) {
+	dirData, err := di.readDirectory()
+	if err != nil {
+		return nil, err
 	}
-	return di.directory, nil
+
+	// Parse directory entries
+	entries := make([]DirectoryEntry, MaxDirectoryEntries)
+	for i := 0; i < MaxDirectoryEntries; i++ {
+		offset := i * DirectoryEntrySize
+		if dirData[offset] == 0xE5 {
+			// Skip unused/deleted entries
+			continue
+		}
+
+		entryData := dirData[offset : offset+DirectoryEntrySize]
+		entry := DirectoryEntry{}
+		err := binary.Read(bytes.NewReader(entryData), binary.LittleEndian, &entry)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse directory entry %d: %w", i, err)
+		}
+		entries[i] = entry
+	}
+
+	return entries, nil
 }
 
-// FlushDirectory ensures all directory changes are written to disk
+// FlushDirectory is not required for +3DOS as changes are written immediately
+// Stub this function for compatibility
 func (di *DiskImage) FlushDirectory() error {
-	if di.directory != nil && di.directory.modified {
-		return di.directory.write()
-	}
 	return nil
 }

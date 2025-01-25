@@ -12,10 +12,10 @@ import (
 const (
 	// Header constants
 	HeaderSignature = "PLUS3DOS"
-	HeaderSoftEOF  = 0x1A
-	HeaderSize     = 128
-	HeaderVersion  = 1
-	HeaderIssue    = 1
+	HeaderSoftEOF   = 0x1A
+	HeaderSize      = 128
+	HeaderVersion   = 1
+	HeaderIssue     = 1
 
 	// File types for +3 BASIC header data
 	FileTypeProgram      = 0
@@ -26,14 +26,14 @@ const (
 
 // Plus3DosHeader represents the 128-byte header structure
 type Plus3DosHeader struct {
-	Signature  [8]byte  // "PLUS3DOS"
-	SoftEOF    byte     // 0x1A
-	Issue      byte     // Issue number
-	Version    byte     // Version number
-	FileLength uint32   // Length of the file in bytes
-	HeaderData [8]byte  // BASIC header data
+	Signature  [8]byte   // "PLUS3DOS"
+	SoftEOF    byte      // 0x1A
+	Issue      byte      // Issue number
+	Version    byte      // Version number
+	FileLength uint32    // Length of the file in bytes
+	HeaderData [8]byte   // BASIC header data
 	Reserved   [104]byte // Reserved space
-	Checksum   byte     // Sum of bytes 0-126 modulo 256
+	Checksum   byte      // Sum of bytes 0-126 modulo 256
 }
 
 // NewPlus3DosHeader creates a new header with standard values
@@ -129,22 +129,22 @@ func (h *Plus3DosHeader) Validate() error {
 
 // UpdateChecksum calculates and sets the header checksum
 func (h *Plus3DosHeader) UpdateChecksum() {
-	var sum byte
+	var sum uint16 // Use uint16 to handle values > 255
 	headerBytes := h.toBytes()
 	for i := 0; i < HeaderSize-1; i++ {
-		sum = (sum + headerBytes[i]) % 256
+		sum += uint16(headerBytes[i]) // Accumulate using uint16
 	}
-	h.Checksum = sum
+	h.Checksum = byte(sum % 256) // Final checksum fits in a byte
 }
 
 // verifyChecksum checks if the current checksum is valid
 func (h *Plus3DosHeader) verifyChecksum() bool {
-	var sum byte
+	var sum uint16 // Use uint16 for accumulation
 	headerBytes := h.toBytes()
 	for i := 0; i < HeaderSize-1; i++ {
-		sum = (sum + headerBytes[i]) % 256
+		sum += uint16(headerBytes[i]) // Accumulate using uint16
 	}
-	return sum == h.Checksum
+	return byte(sum%256) == h.Checksum // Compare byte-sized checksum
 }
 
 // toBytes converts the header to a byte slice
@@ -159,7 +159,7 @@ func (h *Plus3DosHeader) FromBytes(data []byte) error {
 	if len(data) < HeaderSize {
 		return errors.New("data too short for header")
 	}
-	
+
 	buf := bytes.NewReader(data)
 	return binary.Read(buf, binary.LittleEndian, h)
 }
@@ -183,7 +183,7 @@ func (h *Plus3DosHeader) GetFileType() string {
 // String returns a human-readable representation of the header
 func (h *Plus3DosHeader) String() string {
 	fileType, length, param1, param2 := h.GetBasicHeader()
-	
+
 	typeStr := h.GetFileType()
 	info := fmt.Sprintf("Type: %s, Length: %d", typeStr, length)
 

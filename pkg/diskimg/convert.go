@@ -74,7 +74,7 @@ func (di *DiskImage) ConvertTAPtoDisk(tap io.Reader, diskPath string) error {
 	}
 
 	// Write header and data
-	if err := f.Write(plus3Header.toBytes()); err != nil {
+	if _, err := f.Write(plus3Header.toBytes()); err != nil {
 		return err
 	}
 	if _, err := f.Write(data); err != nil {

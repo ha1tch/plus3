@@ -3,8 +3,8 @@
 package diskimg
 
 import (
-	"encoding/binary"
 	"errors"
+
 	"github.com/ha1tch/plus3/internal"
 )
 
@@ -13,31 +13,33 @@ const (
 	TracksPerSide   = 40
 	SectorsPerTrack = 9
 	BytesPerSector  = 512
-	SidesPerDisk    = 1  // +3 uses single-sided disks
+	SidesPerDisk    = 1 // +3 uses single-sided disks
+	DirectorySector = 0 // In +3DOS dir starts at sector 0 of dir track
+	DiskSizeInBytes = 184320
 )
 
 // DSK format header structure based on standard CPCEMU disk image format
 type DiskHeader struct {
-	Signature    [34]byte  // "EXTENDED CPC DSK File\r\nDisk-Info\r\n"
-	Creator      [14]byte  // Name of the creator
-	TracksNum    uint8     // Number of tracks
-	SidesNum     uint8     // Number of sides
-	TrackSize    uint16    // Size of each track in bytes
-	Unused       [204]byte // Unused space to make header 256 bytes
+	Signature [34]byte  // "EXTENDED CPC DSK File\r\nDisk-Info\r\n"
+	Creator   [14]byte  // Name of the creator
+	TracksNum uint8     // Number of tracks
+	SidesNum  uint8     // Number of sides
+	TrackSize uint16    // Size of each track in bytes
+	Unused    [204]byte // Unused space to make header 256 bytes
 }
 
 // Track information block
 type TrackInfo struct {
-	Signature   [13]byte    // "Track-Info\r\n"
-	Unused1     [3]byte
-	TrackNum    uint8
-	SideNum     uint8
-	Unused2     [2]byte
-	SectorSize  uint8       // sector size = 128 << SectorSize
-	SectorsNum  uint8       // number of sectors in track
-	GapLength   uint8       // gap#3 length
-	FillerByte  uint8       // filler byte
-	SectorInfo  [9]SectorInfo // For +3, always 9 sectors per track
+	Signature  [13]byte // "Track-Info\r\n"
+	Unused1    [3]byte
+	TrackNum   uint8
+	SideNum    uint8
+	Unused2    [2]byte
+	SectorSize uint8         // sector size = 128 << SectorSize
+	SectorsNum uint8         // number of sectors in track
+	GapLength  uint8         // gap#3 length
+	FillerByte uint8         // filler byte
+	SectorInfo [9]SectorInfo // For +3, always 9 sectors per track
 }
 
 // Sector information
@@ -53,20 +55,24 @@ type SectorInfo struct {
 
 // DiskImage represents a complete disk image in memory
 type DiskImage struct {
-	Header        DiskHeader
-	Tracks        [][]byte           // Raw track data
-	Modified      bool
-	sectorMap     *internal.SectorMap
-	allocation    *SectorAllocation
+	Header          DiskHeader
+	Tracks          [][]byte // Raw track data
+	Modified        bool
+	sectorMap       *internal.SectorMap
+	allocation      *SectorAllocation
+	directory       []DirectoryEntry
+	diskSizeInBytes int
 }
 
 // NewDiskImage creates a new empty disk image with standard +3 format
 func NewDiskImage() *DiskImage {
 	di := &DiskImage{
-		Modified: true,
-		sectorMap: internal.NewSectorMap(),
+		Modified:        true,
+		sectorMap:       internal.NewSectorMap(),
+		directory:       make([]DirectoryEntry, MaxDirectoryEntries),
+		diskSizeInBytes: DiskSizeInBytes,
 	}
-	
+
 	// Initialize header with standard +3 parameters
 	copy(di.Header.Signature[:], "EXTENDED CPC DSK File\r\nDisk-Info\r\n")
 	copy(di.Header.Creator[:], "plus3 utility")
@@ -172,6 +178,10 @@ func (di *DiskImage) SetSectorData(track, sector, side int, data []byte) error {
 	di.Modified = true
 
 	return nil
+}
+
+func (di *DiskImage) TotalSectors() int {
+	return di.diskSizeInBytes / BytesPerSector
 }
 
 // GetTrackData returns the raw data for a specific track

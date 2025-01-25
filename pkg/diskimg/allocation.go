@@ -5,11 +5,13 @@ package diskimg
 import (
 	"errors"
 	"fmt"
+
+	"github.com/ha1tch/plus3/internal"
 )
 
 // SectorAllocation tracks the allocation status of disk sectors
 type SectorAllocation struct {
-	allocated []bool  // true if sector is allocated
+	allocated []bool // true if sector is allocated
 	sectorMap *internal.SectorMap
 }
 

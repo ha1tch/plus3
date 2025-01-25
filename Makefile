@@ -3,7 +3,7 @@
 # Variables
 PROJECT_NAME = plus3
 OUTPUT_BIN = $(HOME)/bin/$(PROJECT_NAME)
-SRC_DIR = ./cmd
+MAIN_FILE = ./cmd/main.go
 
 # Default target
 all: build
@@ -12,7 +12,7 @@ all: build
 build:
 	@echo "Building $(PROJECT_NAME)..."
 	mkdir -p $(HOME)/bin
-	go build -o $(OUTPUT_BIN) .
+	go build -o $(OUTPUT_BIN) $(MAIN_FILE)
 
 # Run the CLI (default help output)
 run:

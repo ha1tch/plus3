@@ -11,35 +11,41 @@ import (
 
 // File represents an open file on the disk image
 type File struct {
-	disk        *DiskImage
-	entry       *DirectoryEntry
-	header      *Plus3DosHeader
-	blocks      []int
-	position    int64
-	size        int64
-	readOnly    bool
-	isHeadered  bool
+	disk       *DiskImage
+	entry      *DirectoryEntry
+	header     *Plus3DosHeader
+	blocks     []int
+	position   int64
+	size       int64
+	readOnly   bool
+	isHeadered bool
 }
 
 // OpenFile opens or creates a file on the disk image
 func (di *DiskImage) OpenFile(filename string, createNew bool) (*File, error) {
-	entry, _, err := di.directory.FindFile(filename)
+	fileEntry, err := di.directory.FindFile(filename)
 	if err != nil && !createNew {
 		return nil, err
 	}
 
 	if err != nil && createNew {
 		// Create new file
-		entry, err = di.directory.AddFile(filename)
-		if err != nil {
+		newEntry := DirectoryEntry{
+			Name:    [8]byte{},
+			Status:  0x01,
+			LogicalSize: 0,
+		}
+		copy(newEntry.Name[:], filename)
+		if err := di.directory.AddFile(newEntry); err != nil {
 			return nil, err
 		}
+		fileEntry, _ = di.directory.FindFile(filename)
 	}
 
 	// Create file struct
 	f := &File{
 		disk:     di,
-		entry:    entry,
+		entry:    fileEntry,
 		position: 0,
 		readOnly: false,
 	}
@@ -81,7 +87,7 @@ func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
 	if endPos > f.size {
 		blocksNeeded := (int(endPos) + BlockSize - 1) / BlockSize
 		currentBlocks := len(f.blocks)
-		
+
 		if blocksNeeded > currentBlocks {
 			// Allocate additional blocks
 			newBlocks, err := f.disk.fileAlloc.AllocateFileSpace(int(endPos - f.size))
@@ -107,7 +113,7 @@ func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
 
 		// Write to sectors in block
 		block := f.blocks[blockIdx]
-		firstSector := f.disk.fileAlloc.blockMap[block]
+		firstSector := block * SectorsPerBlock
 		sectorOffset := blockOffset / BytesPerSector
 		sectorNum := firstSector + sectorOffset
 
@@ -154,7 +160,7 @@ func (f *File) ReadAt(p []byte, off int64) (n int, err error) {
 
 		// Read from sectors in block
 		block := f.blocks[blockIdx]
-		firstSector := f.disk.fileAlloc.blockMap[block]
+		firstSector := block * SectorsPerBlock
 		sectorOffset := blockOffset / BytesPerSector
 		sectorNum := firstSector + sectorOffset
 
@@ -215,9 +221,7 @@ func (f *File) Close() error {
 
 	// Update directory entry
 	f.entry.LogicalSize = uint16((f.size + 127) / 128) // Size in 128-byte records
-	binary.LittleEndian.PutUint16(f.entry.AllocationBlocks[:], uint16(len(f.blocks)))
-	f.disk.directory.modified = true
-
+	f.entry.AllocationBlocks[0] = uint8(len(f.blocks))
 	return nil
 }
 
