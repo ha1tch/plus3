@@ -1,8 +1,13 @@
 # plus3
+```
+       .__               ________  
+______ |  |  __ __  _____\_____  \ 
+\____ \|  | |  |  \/  ___/ _(__  < 
+|  |_> >  |_|  |  /\___ \ /       \
+|   __/|____/____//____  >______  /
+|__|                   \/       \/ 
 
-This is work in progress, it's incomplete and buggy as hell.
-
-What this aims to be in the future when it's more feature-complete and when it passes some tests:
+```
 
 ## +3DOS Disk Management Tool
 
