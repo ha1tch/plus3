@@ -1,3 +1,5 @@
+// file: pkg/diskimg/diskimg.go
+
 package diskimg
 
 import (
@@ -57,20 +59,6 @@ func (di *DiskImage) SetSectorData(track, sector, side int, data []byte) error {
 // AllocateFileSpace allocates space for a file on the disk
 func (di *DiskImage) AllocateFileSpace(size int) ([]int, error) {
 	return di.allocation.AllocateFileSpace(size)
-}
-
-// Directory represents the file directory on the disk
-type Directory struct {
-	Entries []DirectoryEntry
-}
-
-// DirectoryEntry represents a single directory entry
-type DirectoryEntry struct {
-	Name            [8]byte
-	Extension       [3]byte
-	Status          byte
-	LogicalSize     uint16
-	AllocationBlocks [8]byte
 }
 
 // AllocationMap tracks sector usage on the disk
