@@ -64,8 +64,8 @@ plus3 add disk.dsk game.bin -t code --load-addr N  # add a CODE file (loads at N
 plus3 add disk.dsk prog.bas -t basic --line 10     # add a BASIC program
 plus3 list disk.dsk                                # list the catalog
 plus3 info disk.dsk                                # disk usage and file count
-plus3 extract disk.dsk GAME.BIN -o out/            # extract a file (byte-exact)
-plus3 extract disk.dsk GAME.BIN -o out/ --strip-header   # without the +3DOS header
+plus3 extract disk.dsk GAME.BIN -o outdir            # extract a file (byte-exact)
+plus3 extract disk.dsk GAME.BIN -o outdir --strip-header  # without the +3DOS header
 plus3 extract disk.dsk LOADER.BAS --basic           # detokenise BASIC to text (stdout)
 plus3 delete disk.dsk GAME.BIN --force             # delete a file
 plus3 --version                                    # show the version

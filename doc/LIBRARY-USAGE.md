@@ -130,7 +130,8 @@ The returned slice is a copy; mutating it does not change the disk. Use the
 
 ```go
 // stripHeader removes the 128-byte PLUS3DOS header so you get just the data.
-err := di.ExportFile("GAME.BIN", "out/game.bin", true)
+// The second argument is a host FILE path (the file is created), not a directory.
+err := di.ExportFile("GAME.BIN", "outfile.bin", true)
 ```
 
 Extraction uses the PLUS3DOS header's length field, so it is byte-exact rather than
