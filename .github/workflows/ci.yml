@@ -18,11 +18,6 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Verify modules
-        run: |
-          go mod download
-          go mod verify
-
       - name: Build
         run: go build ./...
 

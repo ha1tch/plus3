@@ -34,6 +34,9 @@ for retro-computing enthusiasts and developers working with ZX Spectrum emulator
 
 - Go 1.25 or later
 
+plus3 has no third-party dependencies -- it builds against the Go standard library
+alone, so a clean checkout builds offline with nothing to download.
+
 ## Building
 
 ```
@@ -77,6 +80,9 @@ plus3 --version                                    # show the version
 ```
 
 File types for `add` are `code`, `basic`, `screen`, `raw`, or `auto` (by extension).
+
+For the full reference on every command and flag, see
+[`doc/MANUAL.md`](doc/MANUAL.md).
 
 ## Disk format
 
@@ -129,3 +135,6 @@ You may obtain a copy of the License at
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.

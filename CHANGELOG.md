@@ -4,6 +4,27 @@ All notable changes to plus3 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.6] - 2026-06-28
+
+### Added
+
+- `doc/MANUAL.md` - a complete reference for every command and flag, with examples.
+
+### Changed
+
+- Completed the Apache licence notice at the end of the README (it was truncated).
+- Dropped the `cobra` CLI dependency; the command-line interface is now built on
+  the Go standard library `flag` package. plus3 has **no third-party dependencies**
+  and builds offline from a clean checkout. All commands, flags, and shorthands
+  (`-t`, `-o`) behave as before; flags may appear before or after positional
+  arguments.
+
+### Removed
+
+- `go.sum` (no external modules remain).
+- The "Verify modules" CI step and the `go.sum` release-allowlist entry (nothing
+  left to verify).
+
 ## [0.9.5] - 2026-06-28
 
 ### Added

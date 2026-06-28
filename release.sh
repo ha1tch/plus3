@@ -71,7 +71,7 @@ rm -f plus3 /tmp/plus3_release_manifest.txt
 
 # --- 7. assemble file list (explicit allowlist) ---------------------------
 echo "==> building file allowlist"
-ALLOW="VERSION CHANGELOG.md LICENSE NOTICE README.md build.sh release.sh Makefile go.mod go.sum"
+ALLOW="VERSION CHANGELOG.md LICENSE NOTICE README.md build.sh release.sh Makefile go.mod"
 ALLOW="$ALLOW cmd internal pkg tools doc .github"
 
 MANIFEST=/tmp/plus3_release_manifest.txt
