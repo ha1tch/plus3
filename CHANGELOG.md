@@ -4,6 +4,20 @@ All notable changes to plus3 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.5] - 2026-06-28
+
+### Added
+
+- `Makefile` with conventional targets: `build` (version injected), `test`, `vet`,
+  `check`, `fmt`, `verify`, `tidy`, `cross` (cross-compile all release platforms
+  into `dist/`), `release`, `clean`, and `help`. Wraps the existing scripts and Go
+  toolchain rather than duplicating their logic.
+
+### Changed
+
+- `release.sh` source allowlist now includes `Makefile`.
+- README build section documents `make`.
+
 ## [0.9.4] - 2026-06-28
 
 ### Added

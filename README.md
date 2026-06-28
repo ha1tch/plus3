@@ -37,12 +37,14 @@ for retro-computing enthusiasts and developers working with ZX Spectrum emulator
 ## Building
 
 ```
-sh build.sh        # produces ./plus3, version injected from VERSION
+make build         # produces ./plus3, version injected from VERSION
 ```
 
-Or directly:
+`make help` lists all targets (`build`, `test`, `check`, `cross`, `release`, ...).
+Or use the script or `go` directly:
 
 ```
+sh build.sh
 go build -o plus3 ./cmd
 ```
 
