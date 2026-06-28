@@ -1,4 +1,7 @@
 # plus3
+
+[![CI](https://github.com/ha1tch/plus3/actions/workflows/ci.yml/badge.svg)](https://github.com/ha1tch/plus3/actions/workflows/ci.yml)
+
 ```
        .__               ________  
 ______ |  |  __ __  _____\_____  \ 
@@ -99,6 +102,12 @@ The canonical version lives in the `VERSION` file (`MAJOR.MINOR.PATCH`).
 `tools/syncver.sh` propagates it to `internal/version/version.go`, and
 `release.sh <version>` runs the full validate -> build -> verify -> package
 pipeline, producing a guarded checkpoint zip.
+
+Continuous integration runs build, vet, and test on every push and pull request.
+Pushing a version tag (`vMAJOR.MINOR.PATCH`) triggers a release workflow that
+cross-compiles binaries for Linux, macOS, Windows, and the BSDs (FreeBSD, OpenBSD,
+NetBSD) across amd64 and arm64 where applicable, and attaches them to a GitHub
+Release.
 
 ## Contact
 

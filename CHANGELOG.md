@@ -4,6 +4,22 @@ All notable changes to plus3 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.4] - 2026-06-28
+
+### Added
+
+- GitHub Actions CI (`.github/workflows/ci.yml`): build, vet, and test on every
+  push and pull request.
+- GitHub Actions release workflow (`.github/workflows/release.yml`): on a version
+  tag, cross-compiles binaries for Linux, macOS, Windows, and the BSDs (FreeBSD,
+  OpenBSD, NetBSD) across amd64/arm64 where applicable, with the version injected
+  from the tag, and attaches them to a GitHub Release.
+- CI status badge in the README.
+
+### Changed
+
+- `release.sh` source allowlist now includes `.github`.
+
 ## [0.9.3] - 2026-06-28
 
 ### Added

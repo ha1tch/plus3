@@ -5,4 +5,4 @@ package version
 
 // Version is the current plus3 version (MAJOR.MINOR.PATCH).
 // Synced from the root VERSION file by tools/syncver.sh.
-var Version = "0.9.3"
+var Version = "0.9.4"
