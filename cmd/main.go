@@ -149,7 +149,7 @@ func runAdd(args []string) error {
 	var ftype string
 	fs := newFlagSet("add", "<disk.dsk> <file>")
 	// -t and --type are equivalent.
-	fs.StringVar(&ftype, "type", "auto", "File type (basic, code, screen, raw, auto)")
+	fs.StringVar(&ftype, "type", "auto", "File type (basic, basictext, code, screen, raw, auto)")
 	fs.StringVar(&ftype, "t", "auto", "File type (shorthand for --type)")
 	fs.Func("line", "Line number for BASIC programs", uint16Flag(&opts.Line))
 	fs.Func("load-addr", "Load address for CODE files", uint16Flag(&opts.LoadAddr))
@@ -164,6 +164,8 @@ func runAdd(args []string) error {
 	switch ftype {
 	case "basic":
 		opts.FileType = add.TypeBasic
+	case "basictext", "basic-text":
+		opts.FileType = add.TypeBasicText
 	case "code":
 		opts.FileType = add.TypeCode
 	case "screen":

@@ -4,6 +4,7 @@ package diskimg
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -83,7 +84,10 @@ func (di *DiskImage) ImportFile(hostPath string, diskPath string, opts *ImportOp
 	return nil
 }
 
-// ImportBasicProgram imports a BASIC program with appropriate header
+// ImportBasicProgram imports an already-tokenised BASIC program with the
+// appropriate PLUS3DOS header. The host file is stored verbatim; use
+// ImportBasicText (or the add command's source mode) to tokenise plain-text
+// BASIC source instead.
 func (di *DiskImage) ImportBasicProgram(hostPath string, line uint16) error {
 	// Determine destination filename
 	base := filepath.Base(hostPath)
@@ -101,6 +105,68 @@ func (di *DiskImage) ImportBasicProgram(hostPath string, line uint16) error {
 	}
 
 	return di.ImportFile(hostPath, diskPath, opts)
+}
+
+// ImportBasicText tokenises plain-text BASIC source and imports it as a BASIC
+// program with the appropriate PLUS3DOS header.
+func (di *DiskImage) ImportBasicText(hostPath string, line uint16) error {
+	base := filepath.Base(hostPath)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	if len(name) > 8 {
+		name = name[:8]
+	}
+	diskPath := name + ".BAS"
+
+	data, err := os.ReadFile(hostPath)
+	if err != nil {
+		return err
+	}
+	tokenised, err := TokeniseBasic(string(data))
+	if err != nil {
+		return fmt.Errorf("tokenise BASIC source: %w", err)
+	}
+	return di.importBasicBytes(diskPath, tokenised, line)
+}
+
+// importBasicBytes writes already-tokenised BASIC bytes to the disk with a
+// PLUS3DOS BASIC header.
+func (di *DiskImage) importBasicBytes(diskPath string, data []byte, line uint16) error {
+	dst, err := di.OpenFile(diskPath, true)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	header := NewPlus3DosHeader()
+	if err := header.SetBasicHeader(FileTypeProgram, uint16(len(data)), line, uint16(len(data))); err != nil {
+		return err
+	}
+	// FileLength is the total on-disk length: the 128-byte header plus the data.
+	header.FileLength = uint32(HeaderSize) + uint32(len(data))
+	header.UpdateChecksum()
+
+	if _, err := dst.Write(header.toBytes()); err != nil {
+		return err
+	}
+	if _, err := dst.Write(data); err != nil {
+		return err
+	}
+	return nil
+}
+
+// IsBasicProgram reports whether the named file on the disk carries a PLUS3DOS
+// header identifying it as a tokenised BASIC program (file type 0). It returns
+// false for headerless files or files of any other type. This is the
+// authoritative type signal (the file's own header), used to warn when a BASIC
+// program is about to be extracted as raw bytes rather than detokenised.
+func (di *DiskImage) IsBasicProgram(diskPath string) bool {
+	f, err := di.OpenFile(diskPath, false)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	return f.isHeadered && f.header != nil && f.header.HeaderData[0] == FileTypeProgram
 }
 
 // ImportCode imports binary/CODE file with load address

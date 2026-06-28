@@ -96,9 +96,23 @@ those details matter).
 err := di.ImportBasicProgram("loader.bas", 10)
 ```
 
-Note this imports an already-tokenised BASIC file. The package detokenises (bytes
--> text) but does not tokenise (text -> bytes); there is no assembler from BASIC
-source to tokenised form here.
+This imports an **already-tokenised** BASIC file. To import plain-text BASIC
+source and have it tokenised on the way in, use `ImportBasicText`:
+
+```go
+err := di.ImportBasicText("loader.txt", 10) // tokenises, then stores
+```
+
+Or tokenise in memory directly with `TokeniseBasic` (the inverse of
+`DetokeniseBasic`):
+
+```go
+tok, err := diskimg.TokeniseBasic(`10 PRINT "HELLO"`)
+```
+
+The tokeniser covers keywords, integer constants (0-65535), string literals, and
+REM comments; it does not produce floating-point literals, DEF FN calculator
+slots, or embedded colour-control bytes.
 
 ### List the catalogue
 
@@ -275,7 +289,9 @@ A few points specific to the two most likely first consumers:
   addr}` gives you control; the package fills in the header-version and
   second-parameter conventions a real +3 expects.
 
-- **Both:** the package does not currently tokenise BASIC source into the on-disk
-  form (it only detokenises the other way). If an assembler or build tool needs to
-  emit a tokenised BASIC loader, that tokeniser would need to be written; the
-  detokeniser here is a useful reference for the byte format.
+- **Both:** the package tokenises plain-text BASIC source into the on-disk form
+  (`TokeniseBasic` / `ImportBasicText`) and detokenises the other way
+  (`DetokeniseBasic` / `ReadBasicText`). The tokeniser covers keywords, integer
+  constants, strings, and REM; it does not emit floating-point literals or DEF FN
+  calculator slots, so programs relying on those should be tokenised with a full
+  toolchain and added with `-t basic`.

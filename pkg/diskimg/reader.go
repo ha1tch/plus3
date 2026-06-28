@@ -114,6 +114,10 @@ func Load(r io.Reader) (*DiskImage, error) {
 	// (add/find/delete) see the existing entries and free slots.
 	if entries, err := di.GetDirectory(); err == nil {
 		copy(di.directory.Entries, entries)
+		// Reconcile the block allocator with the blocks already occupied by
+		// existing files, so a subsequently added file does not reuse and
+		// overwrite them.
+		di.fileAlloc.markUsedBlocks(di.directory.Entries)
 	}
 
 	di.Modified = false

@@ -150,6 +150,33 @@ func (fa *FileAllocation) findFreeBlock() int {
 	return -1
 }
 
+// markUsedBlocks scans the directory entries of an already-loaded disk and
+// marks every block referenced by a live file as used. Without this, a freshly
+// constructed allocator believes every data block is free and will hand out
+// blocks that already hold an existing file, overwriting it. This must be
+// called after the directory has been populated on load.
+func (fa *FileAllocation) markUsedBlocks(entries []DirectoryEntry) {
+	for i := range entries {
+		e := &entries[i]
+		// Skip unused/deleted slots; only live files own blocks.
+		if e.IsUnused() || e.IsDeleted() {
+			continue
+		}
+		for _, b := range e.AllocationBlocks {
+			// Block 0 is unused as a padding marker in the Al list (the data
+			// area never allocates the reserved/directory blocks to a file),
+			// so a zero entry means "no block here".
+			block := int(b)
+			if block == 0 {
+				continue
+			}
+			if block >= 0 && block < len(fa.freeBlocks) {
+				fa.freeBlocks[block] = false
+			}
+		}
+	}
+}
+
 // GetFreeBlocks returns number of free blocks
 func (fa *FileAllocation) GetFreeBlocks() int {
 	count := 0

@@ -4,6 +4,32 @@ All notable changes to plus3 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.7] - 2026-06-28
+
+### Added
+
+- BASIC tokeniser: `add -t basictext` imports plain-text BASIC source and
+  tokenises it on import (the existing `-t basic` continues to store
+  already-tokenised programs verbatim). New public API `TokeniseBasic` (the
+  inverse of `DetokeniseBasic`) and `ImportBasicText`. The tokeniser covers
+  keywords, integer constants, string literals, and REM comments; it does not
+  emit floating-point literals, DEF FN calculator slots, or embedded
+  colour-control bytes.
+- Advisory warnings (to standard error, suppressed by `--quiet`) that flag likely
+  BASIC mistakes without changing behaviour: extracting a tokenised BASIC program
+  without `--basic`, adding plain-text source as `-t basic`, or adding
+  already-tokenised input as `-t basictext`. Backed by a structural
+  tokenised-BASIC detector (`LooksTokenised`) and the file's PLUS3DOS header type
+  (`IsBasicProgram`), not single-byte guessing.
+
+### Fixed
+
+- Adding a second file to a disk no longer overwrites the first. A freshly loaded
+  allocator marked every data block free, ignoring blocks already occupied by
+  existing files, so the second file reused the first file's blocks. The allocator
+  now reconciles against the on-disk directory at load time. Regression test added
+  (`TestMultiFileNoOverwrite`).
+
 ## [0.9.6] - 2026-06-28
 
 ### Added

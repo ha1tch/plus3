@@ -69,7 +69,7 @@ plus3 add [flags] <disk.dsk> <file>
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-t`, `--type <type>` | `auto` | File type: `basic`, `code`, `screen`, `raw`, or `auto`. |
+| `-t`, `--type <type>` | `auto` | File type: `basic`, `basictext`, `code`, `screen`, `raw`, or `auto`. |
 | `--load-addr <n>` | `32768` | Load address for CODE files (decimal or `0x` hex). |
 | `--line <n>` | `10` | Auto-run line number for BASIC programs. |
 | `--force` | off | Overwrite an existing file of the same name. |
@@ -88,19 +88,33 @@ file's extension:
 Type notes:
 
 - **code** - a machine-code block. `--load-addr` sets the address it loads to.
-- **basic** - a tokenised BASIC program. `--line` sets the auto-run line (use a
-  value of 32768 or above for no auto-run). plus3 stores BASIC in tokenised form;
-  it does not tokenise plain text source.
+- **basic** - an **already-tokenised** BASIC program, stored verbatim. `--line`
+  sets the auto-run line (use a value of 32768 or above for no auto-run).
+- **basictext** - **plain-text** BASIC source, which is tokenised on import. Each
+  source line must begin with a line number, e.g.
+  `10 CLEAR 32767: LOAD "game"CODE: RANDOMIZE USR 32768`. The tokeniser covers
+  keywords, integer constants (0-65535), string literals, and REM comments;
+  keywords inside strings and after REM are left literal. It does not produce
+  floating-point literals, DEF FN calculator slots, or embedded colour-control
+  bytes, so for programs that rely on those, tokenise with a full toolchain and
+  add the result with `-t basic`.
 - **screen** - a SCREEN$ dump. The host file must be exactly 6912 bytes (6144
   pixel bytes plus 768 attribute bytes); other sizes are rejected.
 - **raw** - the bytes are stored as-is.
+
+As a safeguard, `add` prints an advisory warning (to standard error, suppressed by
+`--quiet`) when the input looks like the wrong BASIC form for the chosen type: if
+`-t basictext` is given input that already parses as tokenised BASIC, or `-t basic`
+is given plain-text source. The operation still proceeds exactly as asked; the
+warning only flags a likely mistake.
 
 The on-disk name is derived from the host filename (8.3, upper-cased).
 
 Examples:
 
 ```
-plus3 add game.dsk loader.bas -t basic --line 10
+plus3 add game.dsk loader.bas -t basic     --line 10   # already tokenised
+plus3 add game.dsk loader.txt -t basictext --line 10   # plain-text source
 plus3 add game.dsk game.bin   -t code --load-addr 0x8000
 plus3 add game.dsk title.scr  -t screen
 plus3 add game.dsk data.dat   -t raw --force
@@ -192,6 +206,10 @@ record size.
 With `--basic`, the program is detokenised to readable text. Without `-o` the text
 goes to standard output; with `-o <dir>` it is written to `<name>.txt` in that
 directory.
+
+If a file whose header marks it as a tokenised BASIC program is extracted without
+`--basic`, `extract` prints an advisory warning (suppressed by `--quiet`)
+suggesting `--basic`. The extraction still proceeds as asked.
 
 Examples:
 

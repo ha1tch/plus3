@@ -79,7 +79,7 @@ plus3 delete disk.dsk GAME.BIN --force             # delete a file
 plus3 --version                                    # show the version
 ```
 
-File types for `add` are `code`, `basic`, `screen`, `raw`, or `auto` (by extension).
+File types for `add` are `code`, `basic` (tokenised), `basictext` (plain-text source, tokenised on import), `screen`, `raw`, or `auto` (by extension).
 
 For the full reference on every command and flag, see
 [`doc/MANUAL.md`](doc/MANUAL.md).

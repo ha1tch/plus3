@@ -17,8 +17,10 @@ type FileType int
 const (
 	// TypeAuto automatically determines file type from extension
 	TypeAuto FileType = iota
-	// TypeBasic indicates a BASIC program
+	// TypeBasic indicates an already-tokenised BASIC program
 	TypeBasic
+	// TypeBasicText indicates plain-text BASIC source to be tokenised on import
+	TypeBasicText
 	// TypeCode indicates machine code or binary data
 	TypeCode
 	// TypeScreen indicates a screen dump
@@ -122,7 +124,29 @@ func Add(diskPath string, filePath string, opts *AddOptions) error {
 	var importErr error
 	switch fileType {
 	case TypeBasic:
+		// Advisory: if the input does not parse as tokenised BASIC (e.g. it is
+		// plain-text source), -t basic will store it verbatim without
+		// tokenising, which will not run on the +3. Warn but proceed as asked.
+		if !opts.Quiet {
+			if data, rerr := os.ReadFile(filePath); rerr == nil && len(data) > 0 && !diskimg.LooksTokenised(data) && looksLikeText(data) {
+				fmt.Fprintf(os.Stderr,
+					"Warning: %s does not look like tokenised BASIC; -t basic stores it "+
+						"verbatim. If this is plain-text source, use -t basictext.\n", filepath.Base(filePath))
+			}
+		}
 		importErr = disk.ImportBasicProgram(filePath, opts.Line)
+	case TypeBasicText:
+		// Advisory: if the input already parses as tokenised BASIC, the user
+		// likely meant -t basic (store verbatim) rather than -t basictext
+		// (tokenise). Warn but proceed as asked.
+		if !opts.Quiet {
+			if data, rerr := os.ReadFile(filePath); rerr == nil && diskimg.LooksTokenised(data) {
+				fmt.Fprintf(os.Stderr,
+					"Warning: %s already looks like tokenised BASIC, but -t basictext will "+
+						"tokenise it again. Did you mean -t basic?\n", filepath.Base(filePath))
+			}
+		}
+		importErr = disk.ImportBasicText(filePath, opts.Line)
 	case TypeCode:
 		importErr = disk.ImportCode(filePath, opts.LoadAddr)
 	case TypeScreen:
@@ -145,4 +169,21 @@ func Add(diskPath string, filePath string, opts *AddOptions) error {
 	}
 
 	return nil
+}
+
+// looksLikeText reports whether data is plausibly plain-text BASIC source: it
+// begins with an ASCII digit (a line number) and is predominantly printable
+// ASCII. Used only to decide whether to show an advisory warning.
+func looksLikeText(data []byte) bool {
+	if len(data) == 0 || data[0] < '0' || data[0] > '9' {
+		return false
+	}
+	printable := 0
+	for _, b := range data {
+		if b == '\n' || b == '\r' || b == '\t' || (b >= 0x20 && b < 0x7F) {
+			printable++
+		}
+	}
+	// Overwhelmingly printable suggests text rather than tokenised bytes.
+	return printable*10 >= len(data)*9
 }

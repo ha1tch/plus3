@@ -124,8 +124,19 @@ func Extract(diskPath string, filename string, opts *ExtractOptions) error {
 		return nil
 	}
 
-	// Extract based on file extension.
+	// Heuristic warning: the file's PLUS3DOS header says it is a BASIC program,
+	// but it is being extracted as bytes (this branch is reached only when
+	// --basic was not given). This is advisory only - the extraction proceeds
+	// exactly as asked - but it nudges the user toward --basic if a readable
+	// listing was what they wanted.
 	ext := strings.ToLower(filepath.Ext(filename))
+	if !opts.Quiet && disk.IsBasicProgram(filename) {
+		fmt.Fprintf(os.Stderr,
+			"Warning: %s is a tokenised BASIC program; extracting it as bytes. "+
+				"Use --basic to detokenise it to readable text.\n", filename)
+	}
+
+	// Extract based on file extension.
 	var extractErr error
 
 	switch {
