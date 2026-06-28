@@ -100,6 +100,21 @@ The canonical version lives in the `VERSION` file (`MAJOR.MINOR.PATCH`).
 `release.sh <version>` runs the full validate -> build -> verify -> package
 pipeline, producing a guarded checkpoint zip.
 
-## Licence
+## Contact
 
-Apache 2.0. See `LICENSE` and `NOTICE`.
+Email: h@ual.li
+
+https://oldbytes.space/@haitchfive
+
+## License
+
+Copyright 2026 h@ual.li
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
