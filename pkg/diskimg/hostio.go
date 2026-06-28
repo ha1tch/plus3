@@ -61,6 +61,12 @@ func (di *DiskImage) ImportFile(hostPath string, diskPath string, opts *ImportOp
 			return err
 		}
 
+		// The PLUS3DOS header's FileLength is the TOTAL on-disk length: the
+		// 128-byte header record plus the data. Set it and the checksum before
+		// writing, otherwise +3DOS sees a zero-length / invalid header.
+		header.FileLength = uint32(HeaderSize) + uint32(info.Size())
+		header.UpdateChecksum()
+
 		headerData := header.toBytes()
 		_, err = dst.Write(headerData)
 		if err != nil {

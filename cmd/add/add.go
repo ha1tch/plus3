@@ -29,21 +29,21 @@ const (
 
 // AddOptions configures the Add operation
 type AddOptions struct {
-	FileType  FileType
-	Line      uint16 // Line number for BASIC programs
-	LoadAddr  uint16 // Load address for CODE files
-	Force     bool   // Allow overwriting existing files
-	Quiet     bool   // Suppress non-error output
+	FileType FileType
+	Line     uint16 // Line number for BASIC programs
+	LoadAddr uint16 // Load address for CODE files
+	Force    bool   // Allow overwriting existing files
+	Quiet    bool   // Suppress non-error output
 }
 
 // DefaultAddOptions returns default options for Add
 func DefaultAddOptions() *AddOptions {
 	return &AddOptions{
-		FileType:  TypeAuto,
-		Line:      10,       // Standard default for BASIC
-		LoadAddr:  32768,    // Standard default address
-		Force:     false,
-		Quiet:     false,
+		FileType: TypeAuto,
+		Line:     10,    // Standard default for BASIC
+		LoadAddr: 32768, // Standard default address
+		Force:    false,
+		Quiet:    false,
 	}
 }
 
@@ -107,9 +107,14 @@ func Add(diskPath string, filePath string, opts *AddOptions) error {
 			return fmt.Errorf("failed to read directory: %w", err)
 		}
 
-		destName := filepath.Base(filePath)
-		if _, _, err := dir.FindFile(destName); err == nil {
-			return fmt.Errorf("file already exists: %s (use force to overwrite)", destName)
+		destName := strings.ToUpper(filepath.Base(filePath))
+		for i := range dir {
+			if dir[i].IsUnused() {
+				continue
+			}
+			if strings.ToUpper(dir[i].GetFilename()) == destName {
+				return fmt.Errorf("file already exists: %s (use force to overwrite)", destName)
+			}
 		}
 	}
 

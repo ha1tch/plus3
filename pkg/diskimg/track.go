@@ -4,16 +4,16 @@ package diskimg
 
 // TrackInfo contains track-level metadata
 type TrackInfo struct {
-	Signature   [13]byte    // "Track-Info\r\n"
-	Unused1     [3]byte
-	TrackNum    uint8
-	SideNum     uint8
-	Unused2     [2]byte
-	SectorSize  uint8       // Sector size = 128 << SectorSize
-	SectorsNum  uint8       // Number of sectors in track
-	GapLength   uint8       // Gap#3 length
-	FillerByte  uint8       // Filler byte
-	SectorInfo  []SectorInfo
+	Signature  [13]byte // "Track-Info\r\n"
+	Unused1    [3]byte
+	TrackNum   uint8
+	SideNum    uint8
+	Unused2    [2]byte
+	SectorSize uint8 // Sector size = 128 << SectorSize
+	SectorsNum uint8 // Number of sectors in track
+	GapLength  uint8 // Gap#3 length
+	FillerByte uint8 // Filler byte
+	SectorInfo []SectorInfo
 }
 
 // SectorInfo contains per-sector metadata
@@ -32,10 +32,10 @@ func NewTrackInfo(track, side int) *TrackInfo {
 	ti := &TrackInfo{
 		TrackNum:   uint8(track),
 		SideNum:    uint8(side),
-		SectorSize: 2,          // 512 bytes (128 << 2)
+		SectorSize: 2, // 512 bytes (128 << 2)
 		SectorsNum: SectorsPerTrack,
-		GapLength:  0x52,       // Standard gap for +3DOS
-		FillerByte: 0xE5,       // Standard filler byte
+		GapLength:  0x52, // Standard gap for +3DOS
+		FillerByte: 0xE5, // Standard filler byte
 		SectorInfo: make([]SectorInfo, SectorsPerTrack),
 	}
 	copy(ti.Signature[:], "Track-Info\r\n")
@@ -46,7 +46,7 @@ func NewTrackInfo(track, side int) *TrackInfo {
 			Track:      uint8(track),
 			Side:       uint8(side),
 			SectorID:   uint8(i + 1),
-			Size:       2,                // 512 bytes
+			Size:       2, // 512 bytes
 			ActualSize: BytesPerSector,
 		}
 	}

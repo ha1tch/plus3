@@ -3,143 +3,72 @@
 package diskimg
 
 import (
-	"encoding/binary"
 	"errors"
 	"io"
 	"os"
 )
 
-// SaveToFile saves the disk image to a file
+// SaveToFile writes the disk image to a file.
 func (di *DiskImage) SaveToFile(filename string) error {
-	file, err := os.Create(filename)
+	f, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	return di.Save(file)
+	defer f.Close()
+	return di.Save(f)
 }
 
-// Save writes the disk image to an io.Writer
+// Save writes the disk image as a standard ("MV - CPC") DSK.
+//
+// The in-memory model stores each track as a complete block (256-byte track
+// information block followed by sector data). For a uniform-geometry +3 disk
+// every track is the same size, so the standard container is sufficient and
+// simplest; tracks are written verbatim from the stored blocks.
 func (di *DiskImage) Save(w io.Writer) error {
-	// Validate disk image before saving
-	if err := di.ValidateFormat(); err != nil {
+	// Persist the in-memory directory to the directory sectors before writing.
+	if err := di.FlushDirectory(); err != nil {
 		return err
 	}
 
-	// Write the main disk header
-	if err := binary.Write(w, binary.LittleEndian, &di.Header); err != nil {
-		return errors.New("failed to write disk header")
+	trackCount := int(di.Header.TracksNum) * int(di.Header.SidesNum)
+	trackSize := 256 + SectorsPerTrack*BytesPerSector
+
+	// Disc information block (256 bytes).
+	dib := make([]byte, 256)
+	copy(dib[0:], "MV - CPCEMU Disk-File\r\nDisk-Info\r\n")
+	creator := di.Header.Creator[:]
+	if len(creator) == 0 || creator[0] == 0 {
+		creator = []byte("plus3")
+	}
+	copy(dib[0x22:0x30], creator)
+	dib[0x30] = byte(trackCount)
+	dib[0x31] = di.Header.SidesNum
+	dib[0x32] = byte(trackSize & 0xFF)
+	dib[0x33] = byte(trackSize >> 8)
+	if _, err := w.Write(dib); err != nil {
+		return errors.New("failed to write disc information block")
 	}
 
-	// Write each track with its header
-	trackCount := int(di.Header.TracksNum * di.Header.SidesNum)
+	// Track blocks, verbatim.
 	for i := 0; i < trackCount; i++ {
-		track := i % int(di.Header.TracksNum)
-		side := i / int(di.Header.TracksNum)
-
-		// Create and write track info
-		trackInfo, err := di.createTrackInfo(track, side)
-		if err != nil {
-			return err
+		block := di.Tracks[i]
+		if block == nil {
+			// Absent track - emit a formatted empty track.
+			block = make([]byte, trackSize)
+			copy(block[0:], "Track-Info\r\n")
+			for j := 256; j < trackSize; j++ {
+				block[j] = 0xE5
+			}
 		}
-
-		if err := binary.Write(w, binary.LittleEndian, trackInfo); err != nil {
-			return errors.New("failed to write track info")
+		if len(block) != trackSize {
+			// Normalise to the standard track size.
+			nb := make([]byte, trackSize)
+			copy(nb, block)
+			block = nb
 		}
-
-        // Get the track data using sector mapping
-        start, end, err := di.sectorMap.GetTrackBounds(track, side)
-        if err != nil {
-            return err
-        }
-
-        // Check if track is allocated
-        trackAllocated, err := di.allocation.GetTrackAllocation(track, side)
-        if err != nil {
-            return err
-        }
-
-        // Write track data
-        trackData := di.Tracks[i]
-        if !containsTrue(trackAllocated) {
-            // If track is not allocated, write empty (formatted) sectors
-            trackData = make([]byte, di.Header.TrackSize)
-            for i := range trackData {
-                trackData[i] = 0xE5 // Standard format filler byte
-            }
-        }
-
-        if _, err := w.Write(trackData); err != nil {
-            return errors.New("failed to write track data")
-        }
+		if _, err := w.Write(block); err != nil {
+			return errors.New("failed to write track data")
+		}
 	}
-
-	di.Modified = false
 	return nil
-}
-
-// containsTrue checks if a boolean slice contains any true values
-func containsTrue(slice []bool) bool {
-    for _, v := range slice {
-        if v {
-            return true
-        }
-    }
-    return false
-}
-
-// createTrackInfo generates track information for a specific track
-func (di *DiskImage) createTrackInfo(track, side int) (*TrackInfo, error) {
-	// Validate track and side
-	if track >= int(di.Header.TracksNum) || track < 0 {
-		return nil, errors.New("track number out of range")
-	}
-	if side >= int(di.Header.SidesNum) || side < 0 {
-		return nil, errors.New("side number out of range")
-	}
-
-	info := &TrackInfo{
-		TrackNum:   uint8(track),
-		SideNum:    uint8(side),
-		SectorSize: 2, // 512 bytes = 128 << 2
-		SectorsNum: SectorsPerTrack,
-		GapLength:  0x52, // Standard gap length for +3 format
-		FillerByte: 0xE5, // Standard filler byte
-	}
-	copy(info.Signature[:], "Track-Info\r\n")
-
-	// Set up sector information using sector mapping
-	for i := 0; i < SectorsPerTrack; i++ {
-		linear, err := di.sectorMap.PhysicalToLinear(track, i, side)
-		if err != nil {
-			return nil, err
-		}
-
-		allocated, err := di.allocation.IsSectorAllocated(linear)
-		if err != nil {
-			return nil, err
-		}
-
-		info.SectorInfo[i] = SectorInfo{
-			Track:      uint8(track),
-			Side:       uint8(side),
-			SectorID:   uint8(i + 1), // Sectors typically numbered from 1
-			SectorSize: 2,            // 512 bytes
-			DataLength: BytesPerSector,
-			// Set FDC status based on allocation
-			FDCStatus1: boolToByte(!allocated), // 0 if allocated, non-zero if not
-			FDCStatus2: 0,
-		}
-	}
-
-	return info, nil
-}
-
-// boolToByte converts a boolean to a byte (0 or 1)
-func boolToByte(b bool) byte {
-	if b {
-		return 1
-	}
-	return 0
 }

@@ -13,23 +13,23 @@ import (
 
 // DiskInfo represents disk information in a structured format
 type DiskInfo struct {
-	Path        string    `json:"path"`
-	Format      string    `json:"format"`
-	Files       int       `json:"files"`
-	UsedSpace   int64     `json:"used_space"`
-	FreeSpace   int64     `json:"free_space"`
-	TotalSpace  int64     `json:"total_space"`
-	Modified    time.Time `json:"modified_time,omitempty"`
-	Validation  []string  `json:"validation_issues,omitempty"`
+	Path       string    `json:"path"`
+	Format     string    `json:"format"`
+	Files      int       `json:"files"`
+	UsedSpace  int64     `json:"used_space"`
+	FreeSpace  int64     `json:"free_space"`
+	TotalSpace int64     `json:"total_space"`
+	Modified   time.Time `json:"modified_time,omitempty"`
+	Validation []string  `json:"validation_issues,omitempty"`
 }
 
 // InfoOptions configures the information display
 type InfoOptions struct {
-	JSON         bool // Output in JSON format
-	Verbose      bool // Show additional details
-	Validate     bool // Perform disk validation
-	Quiet        bool // Suppress non-error output
-	ShowDeleted  bool // Include information about deleted files
+	JSON        bool // Output in JSON format
+	Verbose     bool // Show additional details
+	Validate    bool // Perform disk validation
+	Quiet       bool // Suppress non-error output
+	ShowDeleted bool // Include information about deleted files
 }
 
 // DefaultInfoOptions returns default options for Info
@@ -75,10 +75,10 @@ func Info(diskPath string, opts *InfoOptions) error {
 	}
 
 	// Calculate file and space information
-	for _, entry := range dir.Entries {
-		if !entry.IsDeleted() && !entry.IsUnused() {
+	for _, entry := range dir {
+		if !entry.IsUnused() && entry.GetFilename() != "" {
 			info.Files++
-			info.UsedSpace += int64(entry.LogicalSize) * 128 // Convert records to bytes
+			info.UsedSpace += int64(entry.RecordCount) * 128 // Convert records to bytes
 		}
 	}
 
@@ -91,11 +91,8 @@ func Info(diskPath string, opts *InfoOptions) error {
 
 	// Perform validation if requested
 	if opts.Validate {
-		validator := diskimg.NewDiskCheck(disk, diskimg.ValidationStrict)
-		if errors := validator.Validate(); len(errors) > 0 {
-			for _, err := range errors {
-				info.Validation = append(info.Validation, err.Error())
-			}
+		if err := disk.DiskCheck(); err != nil {
+			info.Validation = append(info.Validation, err.Error())
 		}
 	}
 

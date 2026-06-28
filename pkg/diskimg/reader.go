@@ -3,168 +3,140 @@
 package diskimg
 
 import (
-	"encoding/binary"
 	"errors"
 	"io"
 	"os"
+
+	"github.com/ha1tch/plus3/internal"
 )
 
-// LoadFromFile loads a DSK image from a file
+// LoadFromFile loads a DSK image from a file.
 func LoadFromFile(filename string) (*DiskImage, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-
 	return Load(file)
 }
 
-// Load reads a DSK image from an io.Reader
+// Load reads a DSK image (standard "MV - CPC" or "EXTENDED CPC") from a reader.
+//
+// The two container variants differ in how track sizes are recorded:
+//   - standard: a single track size in the disc-information block (offset 0x32);
+//     every track is that size.
+//   - extended: the disc-information block track-size field is 0, and a per-track
+//     size table starts at offset 0x34 (one byte per track, value*256 = bytes;
+//     0 means the track is absent).
+//
+// Real +3 disks (including those written by emulators and CPDRead) are almost
+// always the extended variant, so both must be handled.
 func Load(r io.Reader) (*DiskImage, error) {
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		return nil, errors.New("failed to read disk image")
+	}
+	if len(raw) < 256 {
+		return nil, errors.New("disk image too small")
+	}
+
 	di := &DiskImage{
 		sectorMap: internal.NewSectorMap(),
+		directory: Directory{Entries: make([]DirectoryEntry, MaxDirectoryEntries)},
 	}
 
-	// Read the header
-	if err := binary.Read(r, binary.LittleEndian, &di.Header); err != nil {
-		return nil, errors.New("failed to read disk header")
+	// Parse the 256-byte disc information block.
+	copy(di.Header.Signature[:], raw[0:34])
+	copy(di.Header.Creator[:], raw[34:48])
+	di.Header.TracksNum = raw[48]
+	di.Header.SidesNum = raw[49]
+	di.Header.TrackSize = uint16(raw[50]) | uint16(raw[51])<<8
+
+	extended := string(raw[0:8]) == "EXTENDED"
+	if !extended && string(raw[0:8]) != "MV - CPC" {
+		return nil, errors.New("invalid disk image signature")
 	}
 
-	// Validate the header
-	if err := di.validateHeader(); err != nil {
+	if err := di.validateHeader(extended); err != nil {
 		return nil, err
 	}
 
-	// Initialize sector allocation
-	totalSectors := int(di.Header.TracksNum) * int(di.Header.SidesNum) * SectorsPerTrack
-	di.allocation = newSectorAllocation(totalSectors)
+	trackCount := int(di.Header.TracksNum) * int(di.Header.SidesNum)
 
-	// Read track data
-	trackCount := int(di.Header.TracksNum * di.Header.SidesNum)
+	// Determine each track's byte size.
+	trackSizes := make([]int, trackCount)
+	if extended {
+		// Per-track size table at offset 0x34, one byte per track (value * 256).
+		table := raw[0x34:]
+		if len(table) < trackCount {
+			return nil, errors.New("extended track size table truncated")
+		}
+		for i := 0; i < trackCount; i++ {
+			trackSizes[i] = int(table[i]) * 256
+		}
+	} else {
+		for i := 0; i < trackCount; i++ {
+			trackSizes[i] = int(di.Header.TrackSize)
+		}
+	}
+
+	totalSectors := trackCount * SectorsPerTrack
+	di.allocation = newSectorAllocation(totalSectors)
+	di.fileAlloc = newFileAllocation(di)
 	di.Tracks = make([][]byte, trackCount)
 
+	// Track data starts at offset 0x100; each track block is its table size.
+	off := 0x100
 	for i := 0; i < trackCount; i++ {
-		// Calculate physical track and side
-		track := i % int(di.Header.TracksNum)
-		side := i / int(di.Header.TracksNum)
+		size := trackSizes[i]
+		if size == 0 {
+			// Absent track (extended format) - store an empty placeholder.
+			di.Tracks[i] = nil
+			continue
+		}
+		if off+size > len(raw) {
+			return nil, errors.New("track data extends past end of image")
+		}
+		block := make([]byte, size)
+		copy(block, raw[off:off+size])
+		di.Tracks[i] = block
+		off += size
 
-		// Read track header
-		var trackInfo TrackInfo
-		if err := binary.Read(r, binary.LittleEndian, &trackInfo); err != nil {
-			return nil, errors.New("failed to read track info")
+		// Light sanity check: the track information block signature. Match only
+		// the "Track-Info" prefix - the spec specifies "Track-Info\r\n" but real
+		// writers (e.g. some emulators) pad with NULs instead of CR/LF.
+		if size >= 10 && string(block[0:10]) != "Track-Info" {
+			return nil, errors.New("invalid track information block signature")
 		}
+	}
 
-		// Validate track info
-		if err := di.validateTrackInfo(&trackInfo, track, side); err != nil {
-			return nil, err
-		}
-
-		// Allocate and read track data
-		trackData := make([]byte, di.Header.TrackSize)
-		if _, err := io.ReadFull(r, trackData); err != nil {
-			return nil, errors.New("failed to read track data")
-		}
-		di.Tracks[i] = trackData
-
-		// Mark sectors in this track as allocated if they contain data
-		start, end, err := di.sectorMap.GetTrackBounds(track, side)
-		if err != nil {
-			return nil, err
-		}
-		
-		// Check if track contains any non-zero data
-		hasData := false
-		for _, b := range trackData {
-			if b != 0 {
-				hasData = true
-				break
-			}
-		}
-		
-		if hasData {
-			err = di.allocation.AllocateSectors(start, end-start+1)
-			if err != nil {
-				return nil, err
-			}
-		}
+	// Populate the in-memory directory from the disk so file operations
+	// (add/find/delete) see the existing entries and free slots.
+	if entries, err := di.GetDirectory(); err == nil {
+		copy(di.directory.Entries, entries)
 	}
 
 	di.Modified = false
 	return di, nil
 }
 
-// validateTrackInfo validates track information against expected values
-func (di *DiskImage) validateTrackInfo(info *TrackInfo, track, side int) error {
-	// Check track signature
-	if string(info.Signature[:12]) != "Track-Info\r\n" {
-		return errors.New("invalid track signature")
-	}
-
-	// Validate track numbering
-	if int(info.TrackNum) != track {
-		return errors.New("track number mismatch")
-	}
-	if int(info.SideNum) != side {
-		return errors.New("side number mismatch")
-	}
-
-	// Check sector parameters
-	if info.SectorSize != 2 { // 512 bytes = 2 (128 << 2)
-		return errors.New("unsupported sector size")
-	}
-	if info.SectorsNum != SectorsPerTrack {
-		return errors.New("invalid sectors per track")
-	}
-
-	// Validate each sector info
-	for i := range info.SectorInfo {
-		if err := di.validateSectorInfo(&info.SectorInfo[i], track, side); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// validateSectorInfo checks individual sector information
-func (di *DiskImage) validateSectorInfo(info *SectorInfo, track, side int) error {
-	if int(info.Track) != track {
-		return errors.New("sector track number mismatch")
-	}
-	if int(info.Side) != side {
-		return errors.New("sector side number mismatch")
-	}
-	if info.SectorSize != 2 { // 512 bytes
-		return errors.New("invalid sector size in sector info")
-	}
-	if info.DataLength != BytesPerSector {
-		return errors.New("invalid sector data length")
-	}
-	return nil
-}
-
-// validateHeader checks if the disk header is valid for a +3 disk
-func (di *DiskImage) validateHeader() error {
-	// Check signature
-	sig := string(di.Header.Signature[:])
-	if sig[:34] != "EXTENDED CPC DSK File\r\nDisk-Info\r\n" {
-		return errors.New("invalid disk image signature")
-	}
-
-	// Validate disk parameters for +3 format
-	if di.Header.TracksNum != TracksPerSide {
+// validateHeader checks the disc-information block for a plausible +3 disk.
+func (di *DiskImage) validateHeader(extended bool) error {
+	// The standard +3 logical format is 40 tracks, but real .dsk images carry
+	// physical tracks beyond that (commonly 40-43, up to ~45). Accept the range.
+	if di.Header.TracksNum < TracksPerSide || di.Header.TracksNum > MaxTracksPerSide {
 		return errors.New("invalid number of tracks for +3 format")
 	}
-
 	if di.Header.SidesNum != SidesPerDisk {
 		return errors.New("invalid number of sides for +3 format")
 	}
-
-	expectedTrackSize := BytesPerSector * SectorsPerTrack
-	if int(di.Header.TrackSize) != expectedTrackSize {
-		return errors.New("invalid track size for +3 format")
+	// For the standard variant the header track size must be the +3 track size;
+	// for the extended variant the header field is 0 and sizes live in the table.
+	if !extended {
+		expected := 256 + BytesPerSector*SectorsPerTrack // track info block + sector data
+		if int(di.Header.TrackSize) != expected {
+			return errors.New("invalid track size for +3 format")
+		}
 	}
-
 	return nil
 }

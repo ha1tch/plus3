@@ -26,6 +26,17 @@ func (di *DiskImage) checkBootSector() error {
 		return fmt.Errorf("failed to read boot sector: %w", err)
 	}
 
+	// Per the +3DOS DD_LOGIN algorithm, a standard +3 disk logs on via the
+	// built-in default XDPB and does NOT carry a populated disk-specification
+	// sector; the spec sector is left as format filler (0xE5). The boot-sector
+	// checksum (bytes must sum to 3 mod 256) applies ONLY to a bootable disk,
+	// identified by a valid disk-type byte (0..3) in byte 0. A standard data
+	// disk (byte 0 = 0xE5 filler) is not bootable and must not be checksummed,
+	// otherwise every normal data disk would be wrongly rejected.
+	if bootSector[0] > 3 {
+		return nil // not a bootable spec sector (format filler) - nothing to check
+	}
+
 	sum := 0
 	for i, b := range bootSector {
 		if i == 15 {
@@ -71,7 +82,7 @@ func (di *DiskImage) checkDirectoryEntries() error {
 func (di *DiskImage) checkSectorAllocation() error {
 	bitmap := make([]bool, di.TotalSectors())
 
-	for _, entry := range di.directory {
+	for _, entry := range di.directory.Entries {
 		if entry.Status == 0xE5 || entry.Status == 0x00 {
 			continue
 		}

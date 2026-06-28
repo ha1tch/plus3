@@ -11,12 +11,12 @@ import (
 
 // TAPHeader represents a TAP file header block
 type TAPHeader struct {
-	Type      byte
-	Filename  [10]byte
-	DataLen   uint16
-	Param1    uint16
-	Param2    uint16
-	Checksum  byte
+	Type     byte
+	Filename [10]byte
+	DataLen  uint16
+	Param1   uint16
+	Param2   uint16
+	Checksum byte
 }
 
 // ConvertTAPtoDisk converts TAP data to +3DOS format
@@ -97,13 +97,13 @@ func (di *DiskImage) ConvertDiskToTAP(diskPath string, tap io.Writer) error {
 	}
 
 	fileType, length, param1, param2 := f.header.GetBasicHeader()
-	
+
 	// Create TAP header block
 	header := TAPHeader{
-		Type:     byte(fileType),
-		DataLen:  length,
-		Param1:   param1,
-		Param2:   param2,
+		Type:    byte(fileType),
+		DataLen: length,
+		Param1:  param1,
+		Param2:  param2,
 	}
 
 	// Copy filename
@@ -112,7 +112,7 @@ func (di *DiskImage) ConvertDiskToTAP(diskPath string, tap io.Writer) error {
 	// Write header block
 	binary.Write(tap, binary.LittleEndian, uint16(19))
 	binary.Write(tap, binary.LittleEndian, header)
-	
+
 	// Calculate and write header checksum
 	var checksum byte
 	headerBytes := make([]byte, 18)
@@ -121,7 +121,7 @@ func (di *DiskImage) ConvertDiskToTAP(diskPath string, tap io.Writer) error {
 	binary.LittleEndian.PutUint16(headerBytes[12:], length)
 	binary.LittleEndian.PutUint16(headerBytes[14:], param1)
 	binary.LittleEndian.PutUint16(headerBytes[16:], param2)
-	
+
 	for _, b := range headerBytes {
 		checksum ^= b
 	}

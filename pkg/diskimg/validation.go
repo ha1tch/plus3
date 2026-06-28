@@ -78,7 +78,7 @@ func (di *DiskImage) validateHeaderFormat() error {
 // validateTrackData verifies all track data structures
 func (di *DiskImage) validateTrackData() error {
 	expectedTracks := int(di.Header.TracksNum * di.Header.SidesNum)
-	
+
 	// Check track array size
 	if len(di.Tracks) != expectedTracks {
 		return &ValidationError{
@@ -125,25 +125,25 @@ func (di *DiskImage) validateDiskParameters() error {
 	// Validate parameters against +3DOS standard format
 	if di.Header.TracksNum != TracksPerSide {
 		return &ValidationError{
-			Field:   "DiskParameters.TracksNum",
-			Message: fmt.Sprintf("invalid number of tracks for +3DOS format: expected %d, got %d", 
+			Field: "DiskParameters.TracksNum",
+			Message: fmt.Sprintf("invalid number of tracks for +3DOS format: expected %d, got %d",
 				TracksPerSide, di.Header.TracksNum),
 		}
 	}
 
 	if di.Header.SidesNum != SidesPerDisk {
 		return &ValidationError{
-			Field:   "DiskParameters.SidesNum",
-			Message: fmt.Sprintf("invalid number of sides for +3DOS format: expected %d, got %d", 
+			Field: "DiskParameters.SidesNum",
+			Message: fmt.Sprintf("invalid number of sides for +3DOS format: expected %d, got %d",
 				SidesPerDisk, di.Header.SidesNum),
 		}
 	}
 
-	expectedTrackSize := BytesPerSector * SectorsPerTrack
+	expectedTrackSize := 256 + BytesPerSector*SectorsPerTrack
 	if int(di.Header.TrackSize) != expectedTrackSize {
 		return &ValidationError{
-			Field:   "DiskParameters.TrackSize",
-			Message: fmt.Sprintf("invalid track size for +3DOS format: expected %d, got %d", 
+			Field: "DiskParameters.TrackSize",
+			Message: fmt.Sprintf("invalid track size for +3DOS format: expected %d, got %d",
 				expectedTrackSize, di.Header.TrackSize),
 		}
 	}
@@ -173,14 +173,14 @@ func (di *DiskImage) ValidateBootSector() error {
 
 	// Calculate checksum (byte 15 should make sum of all bytes = 3 mod 256)
 	var sum byte
-	for i, b := range bootSector[:15] {
+	for _, b := range bootSector[:15] {
 		sum += b
 	}
 	for _, b := range bootSector[16:] {
 		sum += b
 	}
 
-	if (sum+bootSector[15])%256 != 3 {
+	if sum+bootSector[15] != 3 {
 		return errors.New("invalid boot sector checksum")
 	}
 

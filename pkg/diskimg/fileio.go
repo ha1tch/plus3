@@ -3,10 +3,10 @@
 package diskimg
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // File represents an open file on the disk image
@@ -29,17 +29,20 @@ func (di *DiskImage) OpenFile(filename string, createNew bool) (*File, error) {
 	}
 
 	if err != nil && createNew {
-		// Create new file
+		// Create a new file. Split the filename into CP/M 8.3 form, space-padded.
+		name, ext := splitFilename(filename)
 		newEntry := DirectoryEntry{
-			Name:    [8]byte{},
-			Status:  0x01,
-			LogicalSize: 0,
+			Status: 0x00, // user 0
 		}
-		copy(newEntry.Name[:], filename)
+		copy(newEntry.Name[:], name[:])
+		copy(newEntry.Extension[:], ext[:])
 		if err := di.directory.AddFile(newEntry); err != nil {
 			return nil, err
 		}
-		fileEntry, _ = di.directory.FindFile(filename)
+		fileEntry, err = di.directory.FindFile(filename)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Create file struct
@@ -48,6 +51,18 @@ func (di *DiskImage) OpenFile(filename string, createNew bool) (*File, error) {
 		entry:    fileEntry,
 		position: 0,
 		readOnly: false,
+	}
+
+	// For an existing file, populate the block list and size from its directory
+	// entry so the read path knows where the data is and how much there is.
+	// (For a newly created file these stay empty until data is written.)
+	if fileEntry.RecordCount > 0 || fileEntry.AllocationBlocks[0] != 0 {
+		for _, b := range fileEntry.AllocationBlocks {
+			if b != 0 {
+				f.blocks = append(f.blocks, int(b))
+			}
+		}
+		f.size = int64(fileEntry.RecordCount) * 128
 	}
 
 	// Try to read header if it exists
@@ -60,6 +75,12 @@ func (di *DiskImage) OpenFile(filename string, createNew bool) (*File, error) {
 				f.header = header
 				f.isHeadered = true
 				f.position = HeaderSize
+				// The PLUS3DOS header records the exact total file length
+				// (header + data); prefer it over the record-rounded size so
+				// reads and exports are byte-exact.
+				if header.FileLength > 0 {
+					f.size = int64(header.FileLength)
+				}
 			}
 		}
 	}
@@ -89,8 +110,10 @@ func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
 		currentBlocks := len(f.blocks)
 
 		if blocksNeeded > currentBlocks {
-			// Allocate additional blocks
-			newBlocks, err := f.disk.fileAlloc.AllocateFileSpace(int(endPos - f.size))
+			// Allocate exactly the shortfall, in whole blocks. Sizing by the byte
+			// delta re-rounds on every incremental write and over-allocates.
+			extraBlocks := blocksNeeded - currentBlocks
+			newBlocks, err := f.disk.fileAlloc.AllocateFileSpace(extraBlocks * BlockSize)
 			if err != nil {
 				return 0, fmt.Errorf("failed to allocate space: %v", err)
 			}
@@ -111,21 +134,34 @@ func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
 		blockRemaining := BlockSize - blockOffset
 		writeSize := min(len(p)-written, blockRemaining)
 
-		// Write to sectors in block
+		// Map the allocation block to a physical track/sector. Allocation blocks
+		// are numbered from the start of the data area (track 1, the reserved
+		// system track being track 0). Each block is two 512-byte sectors.
 		block := f.blocks[blockIdx]
-		firstSector := block * SectorsPerBlock
-		sectorOffset := blockOffset / BytesPerSector
-		sectorNum := firstSector + sectorOffset
+		linearSector := block*SectorsPerBlock + blockOffset/BytesPerSector
+		track := DirectoryTrack + linearSector/SectorsPerTrack
+		sector := linearSector % SectorsPerTrack
 
-		track := sectorNum / SectorsPerTrack
-		sector := sectorNum % SectorsPerTrack
-
-		err = f.disk.SetSectorData(track, sector, 0, p[written:written+writeSize])
+		// Sector writes must be full 512-byte sectors; for a partial write,
+		// read-modify-write the sector so surrounding bytes are preserved.
+		secOff := blockOffset % BytesPerSector
+		cur, err := f.disk.GetSectorData(track, sector, 0)
 		if err != nil {
+			cur = make([]byte, BytesPerSector)
+			for i := range cur {
+				cur[i] = 0xE5
+			}
+		}
+		nWrite := writeSize
+		if secOff+nWrite > BytesPerSector {
+			nWrite = BytesPerSector - secOff
+		}
+		copy(cur[secOff:secOff+nWrite], p[written:written+nWrite])
+		if err = f.disk.SetSectorData(track, sector, 0, cur); err != nil {
 			return written, err
 		}
 
-		written += writeSize
+		written += nWrite
 	}
 
 	f.position = off + int64(written)
@@ -158,22 +194,23 @@ func (f *File) ReadAt(p []byte, off int64) (n int, err error) {
 		blockRemaining := BlockSize - blockOffset
 		readSize := min(toRead-read, blockRemaining)
 
-		// Read from sectors in block
+		// Map the allocation block to a physical track/sector (see WriteAt).
 		block := f.blocks[blockIdx]
-		firstSector := block * SectorsPerBlock
-		sectorOffset := blockOffset / BytesPerSector
-		sectorNum := firstSector + sectorOffset
-
-		track := sectorNum / SectorsPerTrack
-		sector := sectorNum % SectorsPerTrack
+		linearSector := block*SectorsPerBlock + blockOffset/BytesPerSector
+		track := DirectoryTrack + linearSector/SectorsPerTrack
+		sector := linearSector % SectorsPerTrack
 
 		data, err := f.disk.GetSectorData(track, sector, 0)
 		if err != nil {
 			return read, err
 		}
-
-		copy(p[read:read+readSize], data)
-		read += readSize
+		secOff := blockOffset % BytesPerSector
+		nRead := readSize
+		if secOff+nRead > BytesPerSector {
+			nRead = BytesPerSector - secOff
+		}
+		copy(p[read:read+nRead], data[secOff:secOff+nRead])
+		read += nRead
 	}
 
 	if read < len(p) {
@@ -219,9 +256,19 @@ func (f *File) Close() error {
 		}
 	}
 
-	// Update directory entry
-	f.entry.LogicalSize = uint16((f.size + 127) / 128) // Size in 128-byte records
-	f.entry.AllocationBlocks[0] = uint8(len(f.blocks))
+	// Update directory entry. The CP/M Al field holds the block NUMBERS used by
+	// this extent (up to 16 entries), not the count. For 1K blocks the numbers fit
+	// in a single byte per slot.
+	f.entry.RecordCount = uint8((f.size + 127) / 128) // 128-byte records in this extent
+	for i := range f.entry.AllocationBlocks {
+		f.entry.AllocationBlocks[i] = 0
+	}
+	for i, blk := range f.blocks {
+		if i >= len(f.entry.AllocationBlocks) {
+			break
+		}
+		f.entry.AllocationBlocks[i] = uint8(blk)
+	}
 	return nil
 }
 
@@ -230,4 +277,30 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// splitFilename splits "NAME.EXT" into an 8-char name and 3-char extension,
+// upper-cased and space-padded to CP/M form.
+func splitFilename(filename string) (name [8]byte, ext [3]byte) {
+	for i := range name {
+		name[i] = ' '
+	}
+	for i := range ext {
+		ext[i] = ' '
+	}
+	fn := strings.ToUpper(filename)
+	dot := strings.LastIndex(fn, ".")
+	base := fn
+	var e string
+	if dot >= 0 {
+		base = fn[:dot]
+		e = fn[dot+1:]
+	}
+	for i := 0; i < len(base) && i < 8; i++ {
+		name[i] = base[i]
+	}
+	for i := 0; i < len(e) && i < 3; i++ {
+		ext[i] = e[i]
+	}
+	return name, ext
 }

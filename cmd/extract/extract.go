@@ -18,6 +18,7 @@ type ExtractOptions struct {
 	Overwrite   bool   // Allow overwriting existing files
 	Quiet       bool   // Suppress non-error output
 	PreserveCAS bool   // Preserve Sinclair BASIC encoding
+	Basic       bool   // Detokenise a BASIC program to readable text
 }
 
 // DefaultExtractOptions returns default options for Extract
@@ -28,6 +29,7 @@ func DefaultExtractOptions() *ExtractOptions {
 		Overwrite:   false,
 		Quiet:       false,
 		PreserveCAS: false,
+		Basic:       false,
 	}
 }
 
@@ -81,12 +83,48 @@ func Extract(diskPath string, filename string, opts *ExtractOptions) error {
 		return fmt.Errorf("failed to read directory: %w", err)
 	}
 
-	entry, _, err := dir.FindFile(filename)
-	if err != nil {
+	found := false
+	for i := range dir {
+		if dir[i].IsUnused() {
+			continue
+		}
+		if strings.EqualFold(dir[i].GetFilename(), filename) {
+			found = true
+			break
+		}
+	}
+	if !found {
 		return fmt.Errorf("file not found: %s", filename)
 	}
 
-	// Extract based on file type and extension
+	// --basic: detokenise the BASIC program to readable text. By default the text
+	// is printed to stdout (handy for a quick look at a loader); if an output
+	// directory was given, it is written there as <name>.txt instead.
+	if opts.Basic {
+		text, err := disk.ReadBasicText(filename)
+		if err != nil {
+			return fmt.Errorf("failed to detokenise %s: %w", filename, err)
+		}
+		if opts.OutputDir == "" {
+			fmt.Print(text)
+			return nil
+		}
+		txtPath := filepath.Join(opts.OutputDir, filename+".txt")
+		if !opts.Overwrite {
+			if _, err := os.Stat(txtPath); err == nil {
+				return fmt.Errorf("output file already exists: %s (use overwrite to replace)", txtPath)
+			}
+		}
+		if err := os.WriteFile(txtPath, []byte(text), 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", txtPath, err)
+		}
+		if !opts.Quiet {
+			fmt.Printf("Detokenised %s to %s\n", filename, txtPath)
+		}
+		return nil
+	}
+
+	// Extract based on file extension.
 	ext := strings.ToLower(filepath.Ext(filename))
 	var extractErr error
 
@@ -95,10 +133,8 @@ func Extract(diskPath string, filename string, opts *ExtractOptions) error {
 		extractErr = disk.ExtractBasic(filename, outPath)
 	case ext == ".scr":
 		extractErr = disk.ExportScreen(filename, outPath)
-	case ext == ".bin" && entry.FileType == diskimg.FileTypeCode:
-		extractErr = disk.ExportFile(filename, outPath, opts.StripHeader)
 	default:
-		// Generic file export
+		// Generic file export (CODE/binary and anything else).
 		extractErr = disk.ExportFile(filename, outPath, opts.StripHeader)
 	}
 
@@ -140,8 +176,8 @@ func ExtractAll(diskPath string, opts *ExtractOptions) error {
 
 	// Extract each file
 	extractedCount := 0
-	for _, entry := range dir.Entries {
-		if !entry.IsDeleted() && !entry.IsUnused() {
+	for _, entry := range dir {
+		if !entry.IsUnused() && entry.GetFilename() != "" {
 			filename := entry.GetFilename()
 			if err := Extract(diskPath, filename, opts); err != nil {
 				return fmt.Errorf("failed to extract %s: %w", filename, err)

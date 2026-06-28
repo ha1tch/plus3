@@ -50,26 +50,33 @@ func Delete(diskPath string, filename string, opts *DeleteOptions) error {
 		return fmt.Errorf("failed to open disk: %w", err)
 	}
 
-	// Get directory
+	// Verify the file exists and check read-only status.
 	dir, err := disk.GetDirectory()
 	if err != nil {
 		return fmt.Errorf("failed to read directory: %w", err)
 	}
-
-	// Verify file exists
-	entry, idx, err := dir.FindFile(filename)
-	if err != nil {
+	var entry *diskimg.DirectoryEntry
+	for i := range dir {
+		if dir[i].IsUnused() {
+			continue
+		}
+		if strings.EqualFold(dir[i].GetFilename(), filename) {
+			entry = &dir[i]
+			break
+		}
+	}
+	if entry == nil {
 		return fmt.Errorf("file not found: %s", filename)
 	}
 
-	// Verify file is not read-only unless forced
+	// Verify file is not read-only unless forced.
 	attrs := &diskimg.FileAttributes{}
 	attrs.ReadFromDirectoryEntry(entry)
 	if attrs.ReadOnly && !opts.Force {
 		return fmt.Errorf("file is read-only: %s (use force to delete)", filename)
 	}
 
-	// Confirm deletion unless forced
+	// Confirm deletion unless forced.
 	if !opts.Force {
 		fmt.Printf("Delete %s? (y/N) ", filename)
 		var response string
@@ -82,17 +89,8 @@ func Delete(diskPath string, filename string, opts *DeleteOptions) error {
 		}
 	}
 
-	// Perform deletion
-	var deleteErr error
-	if opts.NoRecycle {
-		// Clear directory entry completely
-		dir.Entries[idx] = diskimg.DirectoryEntry{}
-	} else {
-		// Mark as deleted but preserve info
-		deleteErr = dir.DeleteFile(filename)
-	}
-
-	if deleteErr != nil {
+	// Perform deletion (frees blocks, marks the entry unused, flushes directory).
+	if deleteErr := disk.DeleteFile(filename); deleteErr != nil {
 		return fmt.Errorf("failed to delete file: %w", deleteErr)
 	}
 

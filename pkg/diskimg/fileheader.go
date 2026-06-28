@@ -14,7 +14,7 @@ const (
 	HeaderSignature = "PLUS3DOS"
 	HeaderSoftEOF   = 0x1A
 	HeaderSize      = 128
-	HeaderVersion   = 1
+	HeaderVersion   = 0 // +3DOS software version; real +3 files use 0
 	HeaderIssue     = 1
 
 	// File types for +3 BASIC header data
@@ -68,8 +68,10 @@ func (h *Plus3DosHeader) SetBasicHeader(fileType byte, length uint16, param1, pa
 		// param1 = variable name, param2 unused
 		h.HeaderData[3] = byte(param1) // Variable name
 	case FileTypeCode:
-		// param1 = load address, param2 unused
+		// param1 = load address; param2 = 32768 (0x8000), the value +3DOS itself
+		// writes for the second CODE parameter.
 		binary.LittleEndian.PutUint16(h.HeaderData[3:5], param1) // Load address
+		binary.LittleEndian.PutUint16(h.HeaderData[5:7], 0x8000) // +3DOS convention
 	}
 
 	return nil

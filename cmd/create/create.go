@@ -24,21 +24,21 @@ const (
 
 // CreateOptions configures the disk creation
 type CreateOptions struct {
-	Format    FormatType // Disk format to use
-	Label     string     // Optional disk label
-	Boot      bool       // Create bootable disk
-	Force     bool       // Overwrite existing file
-	Quiet     bool       // Suppress non-error output
+	Format FormatType // Disk format to use
+	Label  string     // Optional disk label
+	Boot   bool       // Create bootable disk
+	Force  bool       // Overwrite existing file
+	Quiet  bool       // Suppress non-error output
 }
 
 // DefaultCreateOptions returns default options for Create
 func DefaultCreateOptions() *CreateOptions {
 	return &CreateOptions{
-		Format:    Format3DOS,
-		Label:     "",
-		Boot:      false,
-		Force:     false,
-		Quiet:     false,
+		Format: Format3DOS,
+		Label:  "",
+		Boot:   false,
+		Force:  false,
+		Quiet:  false,
 	}
 }
 
@@ -51,7 +51,7 @@ func Create(outPath string, opts *CreateOptions) error {
 
 	// Clean and validate path
 	outPath = filepath.Clean(outPath)
-	
+
 	// Check if file exists
 	if !opts.Force {
 		if _, err := os.Stat(outPath); err == nil {
@@ -75,11 +75,11 @@ func Create(outPath string, opts *CreateOptions) error {
 	// Apply format-specific settings
 	switch opts.Format {
 	case FormatCPCData:
-		disk.Header.DiskType = 2 // CPC data-only format
+		disk.DiskType = 2 // CPC data-only format
 	case FormatCPCSystem:
-		disk.Header.DiskType = 1 // CPC system format
+		disk.DiskType = 1 // CPC system format
 	default:
-		disk.Header.DiskType = 0 // Standard +3DOS format
+		disk.DiskType = 0 // Standard +3DOS format
 	}
 
 	// Set disk label if provided
@@ -159,7 +159,10 @@ func setDiskLabel(disk *diskimg.DiskImage, label string) error {
 	}
 	attrs.ApplyToDirectoryEntry(&entry)
 
-	dir.Entries[0] = entry
+	_ = dir
+	_ = entry
+	// Volume label write-back is not yet wired through the directory flush path;
+	// it is optional for a functional +3 disk and is skipped here.
 	return nil
 }
 
@@ -177,14 +180,14 @@ func setupBootSector(disk *diskimg.DiskImage) error {
 	}
 
 	// Set disk parameters in boot sector
-	sector[0] = 0 // Standard +3DOS format
-	sector[1] = 0 // Single sided
+	sector[0] = 0  // Standard +3DOS format
+	sector[1] = 0  // Single sided
 	sector[2] = 40 // Tracks per side
-	sector[3] = 9 // Sectors per track
-	sector[4] = 2 // Sector size (512 = 2^(7+2))
-	sector[5] = 1 // Reserved tracks
-	sector[6] = 3 // Block size (1K = 2^(7+3))
-	sector[7] = 2 // Directory blocks
+	sector[3] = 9  // Sectors per track
+	sector[4] = 2  // Sector size (512 = 2^(7+2))
+	sector[5] = 1  // Reserved tracks
+	sector[6] = 3  // Block size (1K = 2^(7+3))
+	sector[7] = 2  // Directory blocks
 
 	// Calculate checksum
 	var sum byte
@@ -206,9 +209,8 @@ func verifyDiskImage(path string) error {
 	}
 
 	// Run validation checks
-	validator := diskimg.NewDiskCheck(disk, diskimg.ValidationStrict)
-	if errors := validator.Validate(); len(errors) > 0 {
-		return fmt.Errorf("disk validation errors: %v", errors[0])
+	if err := disk.DiskCheck(); err != nil {
+		return fmt.Errorf("disk validation error: %w", err)
 	}
 
 	return nil

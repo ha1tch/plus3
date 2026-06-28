@@ -12,13 +12,15 @@ import (
 	"github.com/ha1tch/plus3/cmd/extract"
 	"github.com/ha1tch/plus3/cmd/info"
 	"github.com/ha1tch/plus3/cmd/list"
+	"github.com/ha1tch/plus3/internal/version"
 )
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "plus3",
-		Short: "A CLI tool for managing +3DOS disk images",
-		Long:  `plus3 is a command-line tool for creating, managing, and extracting files from +3DOS disk images.`,
+		Use:     "plus3",
+		Short:   "A CLI tool for managing +3DOS disk images",
+		Long:    `plus3 is a command-line tool for creating, managing, and extracting files from +3DOS disk images.`,
+		Version: version.Version,
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help() // Show help if no subcommand is provided
 		},
@@ -64,16 +66,31 @@ func createCommand() *cobra.Command {
 // addCommand sets up the 'add' subcommand
 func addCommand() *cobra.Command {
 	opts := add.DefaultAddOptions()
+	var ftype string
 	cmd := &cobra.Command{
 		Use:   "add [disk image] [file path]",
 		Short: "Add a file to a +3DOS disk image",
 		Args:  cobra.ExactArgs(2),
+		PreRun: func(cmd *cobra.Command, args []string) {
+			switch ftype {
+			case "basic":
+				opts.FileType = add.TypeBasic
+			case "code":
+				opts.FileType = add.TypeCode
+			case "screen":
+				opts.FileType = add.TypeScreen
+			case "raw":
+				opts.FileType = add.TypeRaw
+			default:
+				opts.FileType = add.TypeAuto
+			}
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return add.Add(args[0], args[1], opts)
 		},
 	}
 
-	cmd.Flags().StringVarP((*string)(&opts.FileType), "type", "t", "auto", "File type (basic, code, screen, raw, auto)")
+	cmd.Flags().StringVarP(&ftype, "type", "t", "auto", "File type (basic, code, screen, raw, auto)")
 	cmd.Flags().Uint16Var(&opts.Line, "line", opts.Line, "Line number for BASIC programs")
 	cmd.Flags().Uint16Var(&opts.LoadAddr, "load-addr", opts.LoadAddr, "Load address for CODE files")
 	cmd.Flags().BoolVar(&opts.Force, "force", opts.Force, "Overwrite existing files")
@@ -117,6 +134,7 @@ func extractCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.OutputDir, "output-dir", "o", opts.OutputDir, "Directory to extract files to")
 	cmd.Flags().BoolVar(&opts.Overwrite, "overwrite", opts.Overwrite, "Allow overwriting existing files")
 	cmd.Flags().BoolVar(&opts.Quiet, "quiet", opts.Quiet, "Suppress non-error output")
+	cmd.Flags().BoolVar(&opts.Basic, "basic", opts.Basic, "Detokenise a BASIC program to readable text (stdout, or <name>.txt with -o)")
 
 	return cmd
 }
@@ -124,10 +142,21 @@ func extractCommand() *cobra.Command {
 // listCommand sets up the 'list' subcommand
 func listCommand() *cobra.Command {
 	opts := list.DefaultListOptions()
+	var format string
 	cmd := &cobra.Command{
 		Use:   "list [disk image]",
 		Short: "List the contents of a +3DOS disk image",
 		Args:  cobra.ExactArgs(1),
+		PreRun: func(cmd *cobra.Command, args []string) {
+			switch format {
+			case "ls":
+				opts.Format = list.FormatLS
+			case "cpm":
+				opts.Format = list.FormatCPM
+			default:
+				opts.Format = list.FormatDOS
+			}
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return list.List(args[0], opts)
 		},
@@ -140,7 +169,7 @@ func listCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.JSON, "json", opts.JSON, "Output in JSON format")
 	cmd.Flags().BoolVar(&opts.Long, "long", opts.Long, "Show detailed information")
 	cmd.Flags().StringVar(&opts.Pattern, "pattern", opts.Pattern, "Filter files by name pattern (e.g., '*.BAS')")
-	cmd.Flags().StringVar(&opts.Format, "format", "dos", "Output format (options: 'ls', 'cpm', 'dos')")
+	cmd.Flags().StringVar(&format, "format", "dos", "Output format (options: 'ls', 'cpm', 'dos')")
 
 	return cmd
 }

@@ -7,15 +7,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Constants for +3DOS directory handling
 const (
-	DirectoryTrack         = 0   // Fixed track for directory
-	DirectoryStartSector   = 0   // Starting sector of the directory
-	DirectorySizeInSectors = 4   // Directory occupies 4 sectors
-	DirectoryEntrySize     = 32  // Size of a single directory entry in bytes
-	MaxDirectoryEntries    = 128 // Maximum entries in the directory
+	DirectoryTrack         = 1  // Directory track (XDPB OFF=1: track 0 is the reserved system track)
+	DirectoryStartSector   = 0  // First data sector index of the directory within the track
+	DirectorySizeInSectors = 4  // Directory occupies 4 sectors
+	DirectoryEntrySize     = 32 // Size of a single directory entry in bytes
+	MaxDirectoryEntries    = 64 // +3 standard format: 2K dir / 32 bytes = 64 entries
 )
 
 // readDirectory reads all directory sectors from the disk
@@ -87,7 +88,9 @@ func (di *DiskImage) GetDirectory() ([]DirectoryEntry, error) {
 	for i := 0; i < MaxDirectoryEntries; i++ {
 		offset := i * DirectoryEntrySize
 		if dirData[offset] == 0xE5 {
-			// Skip unused/deleted entries
+			// Unused/deleted entry - preserve the 0xE5 marker so callers can
+			// identify free slots (IsUnused) and reuse them.
+			entries[i].Status = 0xE5
 			continue
 		}
 
@@ -103,8 +106,60 @@ func (di *DiskImage) GetDirectory() ([]DirectoryEntry, error) {
 	return entries, nil
 }
 
-// FlushDirectory is not required for +3DOS as changes are written immediately
-// Stub this function for compatibility
+// FlushDirectory serializes the in-memory directory and writes it to the
+// directory sectors (track 1). Empty entries are stored with the 0xE5 marker.
 func (di *DiskImage) FlushDirectory() error {
-	return nil
+	dirData, err := di.directory.Save()
+	if err != nil {
+		return err
+	}
+	// Pad/trim to the directory area size and ensure empty entries are 0xE5.
+	want := DirectorySizeInSectors * BytesPerSector
+	if len(dirData) < want {
+		pad := make([]byte, want-len(dirData))
+		for i := range pad {
+			pad[i] = 0xE5
+		}
+		dirData = append(dirData, pad...)
+	} else if len(dirData) > want {
+		dirData = dirData[:want]
+	}
+	return di.writeDirectory(dirData)
+}
+
+// DeleteFile removes a file from the disk: it frees the file's allocation blocks,
+// marks its directory entry unused (0xE5), and flushes the directory to disk.
+func (di *DiskImage) DeleteFile(filename string) error {
+	idx := -1
+	for i := range di.directory.Entries {
+		e := &di.directory.Entries[i]
+		if e.IsUnused() {
+			continue
+		}
+		if strings.EqualFold(e.GetFilename(), strings.ToUpper(strings.TrimSpace(filename))) {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("file not found: %s", filename)
+	}
+
+	// Free the allocation blocks listed in the entry.
+	entry := &di.directory.Entries[idx]
+	var blocks []int
+	for _, b := range entry.AllocationBlocks {
+		if b != 0 {
+			blocks = append(blocks, int(b))
+		}
+	}
+	if di.fileAlloc != nil && len(blocks) > 0 {
+		_ = di.fileAlloc.FreeBlocks(blocks)
+	}
+
+	// Mark the entry unused.
+	di.directory.Entries[idx] = DirectoryEntry{Status: 0xE5}
+
+	di.Modified = true
+	return di.FlushDirectory()
 }

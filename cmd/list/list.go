@@ -5,7 +5,6 @@ package list
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,30 +27,30 @@ type FileEntry struct {
 type Format int
 
 const (
-	FormatLS   Format = iota // Unix ls-style format
+	FormatLS  Format = iota // Unix ls-style format
 	FormatCPM               // Traditional CPM format
 	FormatDOS               // DOS dir-style format
 )
 
 // ListOptions configures the directory listing
 type ListOptions struct {
-	DiskPath    string   // Path to disk image (needed for DOS format display)
-	Format      Format   // Output format style
-	JSON        bool     // Output in JSON format
-	Long        bool     // Show detailed information
-	Sort        string   // Sort order: name, size, type
-	Reverse     bool     // Reverse sort order
-	ShowSystem  bool     // Show system files
-	ShowDeleted bool     // Show deleted files
-	Pattern     string   // Filter by filename pattern
-	Quiet       bool     // Suppress non-error output
-	Human       bool     // Human-readable sizes
+	DiskPath    string // Path to disk image (needed for DOS format display)
+	Format      Format // Output format style
+	JSON        bool   // Output in JSON format
+	Long        bool   // Show detailed information
+	Sort        string // Sort order: name, size, type
+	Reverse     bool   // Reverse sort order
+	ShowSystem  bool   // Show system files
+	ShowDeleted bool   // Show deleted files
+	Pattern     string // Filter by filename pattern
+	Quiet       bool   // Suppress non-error output
+	Human       bool   // Human-readable sizes
 }
 
 // DefaultListOptions returns default options for List
 func DefaultListOptions() *ListOptions {
 	return &ListOptions{
-		Format:      FormatDOS,  // Default to familiar DOS format
+		Format:      FormatDOS, // Default to familiar DOS format
 		JSON:        false,
 		Long:        false,
 		Sort:        "name",
@@ -91,7 +90,7 @@ func List(diskPath string, opts *ListOptions) error {
 
 	// Collect file entries
 	var files []FileEntry
-	for _, entry := range dir.Entries {
+	for _, entry := range dir {
 		if shouldIncludeFile(&entry, opts) {
 			file := fileEntryFromDirEntry(&entry)
 			if matchesPattern(file.Name, opts.Pattern) {
@@ -130,7 +129,7 @@ func shouldIncludeFile(entry *diskimg.DirectoryEntry, opts *ListOptions) bool {
 
 	attrs := &diskimg.FileAttributes{}
 	attrs.ReadFromDirectoryEntry(entry)
-	
+
 	if attrs.System && !opts.ShowSystem {
 		return false
 	}
@@ -155,7 +154,7 @@ func fileEntryFromDirEntry(entry *diskimg.DirectoryEntry) FileEntry {
 
 	return FileEntry{
 		Name:       entry.GetFilename(),
-		Size:       int(entry.LogicalSize) * 128, // Convert records to bytes
+		Size:       int(entry.RecordCount) * 128, // Convert records to bytes
 		Type:       determineFileType(entry),
 		Attributes: attrList,
 	}
@@ -208,6 +207,17 @@ func outputJSON(files []FileEntry) error {
 	return encoder.Encode(files)
 }
 
+func outputLS(files []FileEntry, opts *ListOptions) error {
+	if len(files) == 0 {
+		fmt.Println("(no files)")
+		return nil
+	}
+	for _, f := range files {
+		fmt.Printf("%-14s %8d  %s\n", f.Name, f.Size, f.Type)
+	}
+	return nil
+}
+
 func outputCPM(files []FileEntry, opts *ListOptions) error {
 	if len(files) == 0 {
 		if !opts.Quiet {
@@ -226,7 +236,7 @@ func outputCPM(files []FileEntry, opts *ListOptions) error {
 	w := os.Stdout
 	fmt.Fprintln(w, "Name     Bytes   Recs  Attributes")
 	fmt.Fprintln(w, "----     -----   ----  ----------")
-	
+
 	for _, file := range files {
 		recs := (file.Size + 127) / 128
 		fmt.Fprintf(w, "%-8s  %6s  %4d   %s\n",
@@ -255,7 +265,7 @@ func outputDOS(files []FileEntry, opts *ListOptions) error {
 	// Calculate totals
 	var totalFiles int
 	var totalBytes int64
-	
+
 	// Print each file
 	for _, file := range files {
 		// Get attributes string
@@ -282,13 +292,13 @@ func outputDOS(files []FileEntry, opts *ListOptions) error {
 
 		// Format size with comma separators
 		sizeStr := formatWithCommas(file.Size)
-		
+
 		// Print entry
 		if file.Type == "Directory" {
-			fmt.Printf("%s  %s    <DIR>          %s\n", 
+			fmt.Printf("%s  %s    <DIR>          %s\n",
 				timeStr, attrStr, file.Name)
 		} else {
-			fmt.Printf("%s  %s  %14s %s\n", 
+			fmt.Printf("%s  %s  %14s %s\n",
 				timeStr, attrStr, sizeStr, file.Name)
 		}
 
@@ -297,10 +307,10 @@ func outputDOS(files []FileEntry, opts *ListOptions) error {
 	}
 
 	// Print summary
-	fmt.Printf("\n    %d File(s)    %14s bytes\n", 
+	fmt.Printf("\n    %d File(s)    %14s bytes\n",
 		totalFiles, formatWithCommas(int(totalBytes)))
 	if !opts.ShowSystem {
-		fmt.Printf("                %14s bytes free\n", 
+		fmt.Printf("                %14s bytes free\n",
 			formatWithCommas(180*1024-int(totalBytes)))
 	}
 

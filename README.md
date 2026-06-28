@@ -11,12 +11,95 @@ ______ |  |  __ __  _____\_____  \
 
 ## +3DOS Disk Management Tool
 
-This tool is a command-line utility for creating, managing, and interacting with virtual disk images in the +3DOS format, commonly used by the ZX Spectrum +3. It allows users to:
+plus3 is a command-line utility for creating, managing, and inspecting virtual
+disk images in the +3DOS format used by the ZX Spectrum +3. It can:
 
-- **Create +3DOS Disk Images**: Format virtual disk images with default settings typical of a ZX Spectrum +3 disk.
-- **Write Files to Disk**: Add files to the disk image, managing sector allocation and file metadata.
-- **List Files**: Display a catalog of files stored in the disk image.
-- **Read Files**: Retrieve and read file contents from the virtual disk image.
+- **Create** blank +3DOS disk images with the standard +3 / PCW layout.
+- **Add** files to an image (CODE, BASIC, screen, or raw), writing a correct
+  PLUS3DOS header and managing block allocation and the directory.
+- **List** the catalogue of files on an image.
+- **Show** disk usage and file counts (`info`).
+- **Extract** a file back to the host, byte-exact (with or without its header).
+- **Detokenise** a BASIC program to readable text (`extract --basic`).
+- **Delete** a file, freeing its blocks.
 
-This tool provides a modern interface for handling +3DOS disk images, useful for retro computing enthusiasts and developers working with ZX Spectrum emulators.
+The disk writer produces images that a real ZX Spectrum +3 accepts; the format
+handling was verified against disks written by physical +3 hardware. It is useful
+for retro-computing enthusiasts and developers working with ZX Spectrum emulators.
 
+## Requirements
+
+- Go 1.25 or later
+
+## Building
+
+```
+sh build.sh        # produces ./plus3, version injected from VERSION
+```
+
+Or directly:
+
+```
+go build -o plus3 ./cmd
+```
+
+## Testing
+
+```
+go test ./...
+```
+
+The suite is small and behaviour-focused: a byte-exact create/add/list/extract
+round-trip, a read of a disk written by a real +3, the BASIC detokeniser (including
+numeric-constant handling and the 128K `PLAY`/`SPECTRUM` tokens), and compliance
+checks that lock in the format details a real +3 verified (user area 0, block-number
+allocation, header version 0, the CODE header convention, and the 32-byte directory
+entry).
+
+## Usage
+
+```
+plus3 create disk.dsk                              # create a blank +3 disk image
+plus3 add disk.dsk game.bin -t code --load-addr N  # add a CODE file (loads at N)
+plus3 add disk.dsk prog.bas -t basic --line 10     # add a BASIC program
+plus3 list disk.dsk                                # list the catalog
+plus3 info disk.dsk                                # disk usage and file count
+plus3 extract disk.dsk GAME.BIN -o out/            # extract a file (byte-exact)
+plus3 extract disk.dsk GAME.BIN -o out/ --strip-header   # without the +3DOS header
+plus3 extract disk.dsk LOADER.BAS --basic           # detokenise BASIC to text (stdout)
+plus3 delete disk.dsk GAME.BIN --force             # delete a file
+plus3 --version                                    # show the version
+```
+
+File types for `add` are `code`, `basic`, `screen`, `raw`, or `auto` (by extension).
+
+## Disk format
+
+plus3 reads and writes the standard single-sided +3 / PCW (CP/M Plus) format:
+40 tracks, 9 sectors per track, 512-byte sectors, 1 KB allocation blocks, and a
+64-entry directory at the start of the data area (track 1; track 0 is the reserved
+system track). The reader handles both the standard (`MV - CPC`) and extended
+(`EXTENDED CPC`) `.dsk` container variants; the writer emits the standard variant.
+Files carry a PLUS3DOS header.
+
+For the obscure and easily-misread parts of the +3DOS format -- the traps that a
+real Spectrum +3 catches but a software round-trip does not -- see
+[`doc/PLUS3DOS-PITFALLS.md`](doc/PLUS3DOS-PITFALLS.md).
+
+## Using as a library
+
+The `pkg/diskimg` package can be embedded in other Go programs (emulators,
+assemblers, build tools) to read and write +3DOS images directly. See
+[`doc/LIBRARY-USAGE.md`](doc/LIBRARY-USAGE.md) for the API guide and worked
+examples.
+
+## Versioning and releases
+
+The canonical version lives in the `VERSION` file (`MAJOR.MINOR.PATCH`).
+`tools/syncver.sh` propagates it to `internal/version/version.go`, and
+`release.sh <version>` runs the full validate -> build -> verify -> package
+pipeline, producing a guarded checkpoint zip.
+
+## Licence
+
+Apache 2.0. See `LICENSE` and `NOTICE`.

@@ -8,9 +8,8 @@ import (
 )
 
 const (
-	BlockSize    = 1024  // +3DOS uses 1K blocks
-	MaxBlocks    = 256   // Maximum number of blocks per file
-	BlocksPerDir = 2     // Directory takes 2 blocks
+	MaxBlocks      = 256 // Maximum number of blocks per file
+	BlocksPerDir   = 2   // Directory takes 2 blocks
 	ReservedBlocks = 1   // Boot sector block
 )
 
@@ -18,8 +17,8 @@ const (
 type FileAllocation struct {
 	disk       *DiskImage
 	allocation *SectorAllocation
-	blockMap   []int      // Maps block numbers to first sector number
-	freeBlocks []bool     // Tracks which blocks are free
+	blockMap   []int  // Maps block numbers to first sector number
+	freeBlocks []bool // Tracks which blocks are free
 }
 
 // newFileAllocation creates a new file allocation manager
@@ -52,7 +51,7 @@ func newFileAllocation(disk *DiskImage) *FileAllocation {
 func (fa *FileAllocation) AllocateFileSpace(size int) ([]int, error) {
 	blocksNeeded := (size + BlockSize - 1) / BlockSize
 	if blocksNeeded > MaxBlocks {
-		return nil, fmt.Errorf("file size exceeds maximum (%d blocks needed, max is %d)", 
+		return nil, fmt.Errorf("file size exceeds maximum (%d blocks needed, max is %d)",
 			blocksNeeded, MaxBlocks)
 	}
 
@@ -66,7 +65,7 @@ func (fa *FileAllocation) AllocateFileSpace(size int) ([]int, error) {
 		for i := 0; i < blocksNeeded; i++ {
 			block := startBlock + i
 			fa.freeBlocks[block] = false
-			
+
 			// Allocate sectors for this block
 			firstSector := fa.blockMap[block]
 			err := fa.allocation.AllocateSectors(firstSector, sectorsPerBlock)
@@ -103,12 +102,12 @@ func (fa *FileAllocation) AllocateFileSpace(size int) ([]int, error) {
 // FreeBlocks releases allocated blocks
 func (fa *FileAllocation) FreeBlocks(blocks []int) error {
 	sectorsPerBlock := BlockSize / BytesPerSector
-	
+
 	for _, block := range blocks {
 		if block >= len(fa.blockMap) {
 			return fmt.Errorf("invalid block number: %d", block)
 		}
-		
+
 		fa.freeBlocks[block] = true
 		firstSector := fa.blockMap[block]
 		err := fa.allocation.FreeSectors(firstSector, sectorsPerBlock)
@@ -179,22 +178,22 @@ func (fa *FileAllocation) DefragmentFile(oldBlocks []int) ([]int, error) {
 
 	// Copy blocks to new location
 	sectorsPerBlock := BlockSize / BytesPerSector
-	
+
 	for i, oldBlock := range oldBlocks {
 		newBlock := newBlocks[i]
-		
+
 		// Copy each sector in the block
 		for s := 0; s < sectorsPerBlock; s++ {
 			oldSector := fa.blockMap[oldBlock] + s
 			newSector := fa.blockMap[newBlock] + s
-			
+
 			// Read old sector
 			data, err := fa.disk.GetSectorData(
 				oldSector/SectorsPerTrack,
 				oldSector%SectorsPerTrack,
 				0)
 			if err != nil {
-				fa.FreeBlocks(newBlocks)  // Rollback
+				fa.FreeBlocks(newBlocks) // Rollback
 				return nil, err
 			}
 
@@ -205,7 +204,7 @@ func (fa *FileAllocation) DefragmentFile(oldBlocks []int) ([]int, error) {
 				0,
 				data)
 			if err != nil {
-				fa.FreeBlocks(newBlocks)  // Rollback
+				fa.FreeBlocks(newBlocks) // Rollback
 				return nil, err
 			}
 		}
