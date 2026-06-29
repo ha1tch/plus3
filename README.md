@@ -34,8 +34,9 @@ for retro-computing enthusiasts and developers working with ZX Spectrum emulator
 
 - Go 1.25 or later
 
-plus3 has no third-party dependencies -- it builds against the Go standard library
-alone, so a clean checkout builds offline with nothing to download.
+plus3 has a single third-party dependency: github.com/ha1tch/zentools, used by the
+TAP<->disk conversion in pkg/diskimg for verified TAP encoding and decoding. The
+disk-image core (the bulk of the library) depends only on the Go standard library.
 
 ## Building
 

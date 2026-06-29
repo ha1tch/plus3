@@ -4,6 +4,42 @@ All notable changes to plus3 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.8] - 2026-06-29
+
+### Changed
+
+- TAP<->disk conversion (`pkg/diskimg/convert.go`) now delegates to
+  github.com/ha1tch/zentools (`pkg/tap`) for TAP encoding and decoding.
+- BASIC tokenisation and detokenisation (`TokeniseBasic`, `DetokeniseBasic`,
+  `LooksTokenised`) now delegate to github.com/ha1tch/zentools (`pkg/basic`).
+  The public function signatures are unchanged and output is byte-identical to
+  the previous in-tree implementation (verified against a golden baseline).
+- These are plus3's first third-party dependency (a single module, zentools);
+  the disk-image core remains standard-library only.
+
+### Fixed
+
+- TAP export (`ConvertDiskToTAP`) produced malformed TAP: the header block
+  carried a stray checksum byte mid-block, omitted the flag byte, and computed
+  the header checksum over the wrong bytes. Output is now well-formed and
+  verified by an independent decoder.
+- TAP import (`ConvertTAPtoDisk`) now writes a complete +3DOS header (correct
+  total file length and header checksum), so an imported file is recognised as
+  headered when reopened.
+
+### Added
+
+- Round-trip tests for TAP<->disk conversion in `pkg/diskimg` (none existed
+  before): a disk->TAP export is checked block-by-block against an independent
+  decoder, and a full disk->TAP->disk->TAP cycle preserves the payload.
+
+### Removed
+
+- Duplicated in-tree TAP and BASIC tokenisation implementations, now provided by
+  zentools (~600 lines).
+- `ExtractAll` in `cmd/extract`: an unreachable function (the CLI has no
+  bulk-extract mode and nothing referenced it).
+
 ## [0.9.7] - 2026-06-28
 
 ### Added

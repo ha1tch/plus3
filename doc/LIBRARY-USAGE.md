@@ -26,10 +26,12 @@ honestly:
   +3 hardware: creating an image, importing CODE and BASIC files, listing the
   directory, exporting files byte-exactly, deleting files, detokenising BASIC, and
   raw sector read/write. Build on these with confidence.
-- **Present but less travelled** -- screen import/export and TAP<->disk conversion
-  exist and compile, but have not had the same hardware verification. Treat them as
-  usable starting points, not settled contracts, and test against real targets
-  before relying on them.
+- **Present but less travelled** -- screen import/export has not had the same
+  hardware verification; treat it as a usable starting point, not a settled
+  contract, and test against real targets before relying on it. TAP<->disk
+  conversion now delegates to github.com/ha1tch/zentools (pkg/tap) for encoding
+  and decoding, which is validated against independent tools and real files, and
+  has round-trip tests in pkg/diskimg.
 
 When in doubt, the rule that governed the whole project applies: verify against a
 real disk or a real machine, because a reader and writer that share an assumption

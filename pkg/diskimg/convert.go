@@ -3,89 +3,90 @@
 package diskimg
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"io"
+
+	"github.com/ha1tch/zentools/pkg/tap"
 )
 
-// TAPHeader represents a TAP file header block
-type TAPHeader struct {
-	Type     byte
-	Filename [10]byte
-	DataLen  uint16
-	Param1   uint16
-	Param2   uint16
-	Checksum byte
-}
-
-// ConvertTAPtoDisk converts TAP data to +3DOS format
-func (di *DiskImage) ConvertTAPtoDisk(tap io.Reader, diskPath string) error {
-	// Read header block
-	var length uint16
-	if err := binary.Read(tap, binary.LittleEndian, &length); err != nil {
-		return err
-	}
-
-	if length != 19 {
-		return errors.New("invalid TAP header block length")
-	}
-
-	var header TAPHeader
-	if err := binary.Read(tap, binary.LittleEndian, &header); err != nil {
-		return err
-	}
-
-	// Read data block
-	if err := binary.Read(tap, binary.LittleEndian, &length); err != nil {
-		return err
-	}
-
-	data := make([]byte, length-1) // -1 for checksum
-	if _, err := io.ReadFull(tap, data); err != nil {
-		return err
-	}
-
-	// Skip checksum byte
-	_, err := tap.Read(make([]byte, 1))
+// ConvertTAPtoDisk converts a single-file TAP image (a header block followed by
+// its data block) into a +3DOS file written to diskPath. TAP parsing and
+// checksum verification are delegated to zentools/pkg/tap, the verified
+// interchange implementation.
+func (di *DiskImage) ConvertTAPtoDisk(r io.Reader, diskPath string) error {
+	image, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
 
-	// Create +3DOS file
-	f, err := di.OpenFile(diskPath, true)
+	blocks, err := tap.Decode(image)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	// Create +3DOS header
+	// Find the header block and the data block that follows it.
+	var header *tap.Block
+	var data *tap.Block
+	for i := range blocks {
+		if blocks[i].IsHeader {
+			header = &blocks[i]
+			if i+1 < len(blocks) {
+				data = &blocks[i+1]
+			}
+			break
+		}
+	}
+	if header == nil {
+		return errors.New("no TAP header block found")
+	}
+	if data == nil {
+		return errors.New("TAP header block has no following data block")
+	}
+	if !header.ChecksumOK {
+		return errors.New("TAP header block checksum mismatch")
+	}
+	if !data.ChecksumOK {
+		return errors.New("TAP data block checksum mismatch")
+	}
+
+	// Build the +3DOS header from the TAP header fields.
 	plus3Header := NewPlus3DosHeader()
 	switch header.Type {
-	case 0: // Program
-		err = plus3Header.SetBasicHeader(FileTypeProgram, header.DataLen, header.Param1, header.Param2)
-	case 3: // Code
-		err = plus3Header.SetBasicHeader(FileTypeCode, header.DataLen, header.Param1, 0)
+	case tap.TypeProgram:
+		err = plus3Header.SetBasicHeader(FileTypeProgram, header.DataLength, header.Param1, header.Param2)
+	case tap.TypeCode:
+		err = plus3Header.SetBasicHeader(FileTypeCode, header.DataLength, header.Param1, 0)
 	default:
 		return errors.New("unsupported TAP file type")
 	}
 	if err != nil {
 		return err
 	}
+	// Record the total file length (header + data) so the file is recognised as
+	// headered when reopened, then compute the header checksum. Both are
+	// required for OpenFile to accept the header, matching ImportFile.
+	plus3Header.FileLength = uint32(HeaderSize) + uint32(len(data.Data))
+	plus3Header.UpdateChecksum()
 
-	// Write header and data
+	f, err := di.OpenFile(diskPath, true)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
 	if _, err := f.Write(plus3Header.toBytes()); err != nil {
 		return err
 	}
-	if _, err := f.Write(data); err != nil {
+	if _, err := f.Write(data.Data); err != nil {
 		return err
 	}
-
 	return nil
 }
 
-// ConvertDiskToTAP converts a +3DOS file to TAP format
-func (di *DiskImage) ConvertDiskToTAP(diskPath string, tap io.Writer) error {
+// ConvertDiskToTAP converts a headered +3DOS file at diskPath into a TAP image
+// (header block plus data block) written to w. TAP encoding, including the
+// header layout and both block checksums, is delegated to zentools/pkg/tap.
+func (di *DiskImage) ConvertDiskToTAP(diskPath string, w io.Writer) error {
 	f, err := di.OpenFile(diskPath, false)
 	if err != nil {
 		return err
@@ -98,52 +99,40 @@ func (di *DiskImage) ConvertDiskToTAP(diskPath string, tap io.Writer) error {
 
 	fileType, length, param1, param2 := f.header.GetBasicHeader()
 
-	// Create TAP header block
-	header := TAPHeader{
-		Type:    byte(fileType),
-		DataLen: length,
-		Param1:  param1,
-		Param2:  param2,
-	}
-
-	// Copy filename
-	copy(header.Filename[:], bytes.TrimRight(f.entry.Name[:], " "))
-
-	// Write header block
-	binary.Write(tap, binary.LittleEndian, uint16(19))
-	binary.Write(tap, binary.LittleEndian, header)
-
-	// Calculate and write header checksum
-	var checksum byte
-	headerBytes := make([]byte, 18)
-	binary.LittleEndian.PutUint16(headerBytes[0:], uint16(19))
-	copy(headerBytes[2:], bytes.Trim(f.entry.Name[:], " "))
-	binary.LittleEndian.PutUint16(headerBytes[12:], length)
-	binary.LittleEndian.PutUint16(headerBytes[14:], param1)
-	binary.LittleEndian.PutUint16(headerBytes[16:], param2)
-
-	for _, b := range headerBytes {
-		checksum ^= b
-	}
-	tap.Write([]byte{checksum})
-
-	// Read file data (skipping header)
+	// Read the file data, skipping the 128-byte +3DOS header.
 	data := make([]byte, length)
-	f.Seek(HeaderSize, io.SeekStart)
+	if _, err := f.Seek(HeaderSize, io.SeekStart); err != nil {
+		return err
+	}
 	if _, err := io.ReadFull(f, data); err != nil {
 		return err
 	}
 
-	// Write data block
-	binary.Write(tap, binary.LittleEndian, uint16(len(data)+1)) // +1 for checksum
-	tap.Write(data)
+	name := trimName(f.entry.Name[:])
 
-	// Calculate and write data checksum
-	checksum = 0
-	for _, b := range data {
-		checksum ^= b
+	var image []byte
+	switch fileType {
+	case FileTypeProgram:
+		// param1 is the autostart LINE, param2 the program length.
+		image = tap.EncodeProgram(name, data, param1)
+	case FileTypeCode:
+		// param1 is the load address.
+		image = tap.EncodeCode(name, data, param1)
+	default:
+		return errors.New("unsupported +3DOS file type for TAP conversion")
 	}
-	tap.Write([]byte{checksum})
 
-	return nil
+	_ = param2 // program length is recomputed by EncodeProgram from the data
+	_, err = w.Write(image)
+	return err
+}
+
+// trimName converts a fixed-width, space-padded +3DOS name field into a string
+// with trailing spaces removed.
+func trimName(name []byte) string {
+	end := len(name)
+	for end > 0 && name[end-1] == ' ' {
+		end--
+	}
+	return string(name[:end])
 }
